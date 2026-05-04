@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QR paso a paso · Aprende a leer QR a simple vista</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar">
+  <h1>QR paso a paso</h1>
+  <p class="subtitle">Visualiza cada etapa de la codificación de un QR. Los <b>grupos de 8 bits</b> se resaltan para que aprendas a leerlos a simple vista.</p>
+</header>
+
+<section class="controls">
+  <label>
+    Texto a codificar:
+    <input id="input-text" type="text" value="HOLA" maxlength="78">
+  </label>
+  <label>
+    Nivel ECC:
+    <select id="input-ecc">
+      <option value="L" selected>L (≈7%)</option>
+      <option value="M">M (≈15%)</option>
+    </select>
+  </label>
+  <label>
+    Máscara:
+    <select id="input-mask">
+      <option value="auto" selected>Auto (mejor penalización)</option>
+      <option value="0">0</option>
+      <option value="1">1</option>
+      <option value="2">2</option>
+      <option value="3">3</option>
+      <option value="4">4</option>
+      <option value="5">5</option>
+      <option value="6">6</option>
+      <option value="7">7</option>
+    </select>
+  </label>
+  <label class="checkbox">
+    <input id="input-overlay" type="checkbox" checked>
+    Resaltar grupos de 8 bits sobre el QR
+  </label>
+  <button id="btn-generate">Generar paso a paso</button>
+</section>
+
+<main id="steps"></main>
+
+<template id="step-template">
+  <article class="step">
+    <header class="step-header">
+      <span class="step-number"></span>
+      <h2 class="step-title"></h2>
+    </header>
+    <p class="step-explain"></p>
+    <div class="step-body"></div>
+  </article>
+</template>
+
+<footer>
+  <p>Lee con la mirada: cada celda de 8 módulos (1 codeword) corresponde a un byte. Los colores ayudan a separar grupos.</p>
+</footer>
+
+<script src="qr.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
