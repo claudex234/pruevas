@@ -44,21 +44,87 @@
 
   // ---- Render: bytes con bits ----
   function renderByteRow(items) {
-    // items: [{label, bits, color, sub?}]
+    // items: [{label, bits, color, top?, sub?, bitColors?}]
+    // bitColors: array de 8 colores para teñir cada bit individualmente
     const row = el('div', { class: 'bits-row' });
     items.forEach((it) => {
       const byte = el('div', { class: 'bits-byte' });
       byte.style.borderColor = it.color;
+      if (it.top) {
+        const top = el('div', { class: 'byte-top', html: it.top });
+        byte.appendChild(top);
+      }
       const bits = el('div', { class: 'bits' });
-      for (const ch of it.bits) {
-        bits.appendChild(el('span', { class: 'bit ' + (ch === '1' ? 'b1' : 'b0') }, [ch]));
+      for (let i = 0; i < it.bits.length; i++) {
+        const ch = it.bits[i];
+        const span = el('span', { class: 'bit ' + (ch === '1' ? 'b1' : 'b0') }, [ch]);
+        if (it.bitColors && it.bitColors[i]) {
+          span.style.boxShadow = 'inset 0 -3px 0 ' + it.bitColors[i];
+        }
+        bits.appendChild(span);
       }
       byte.appendChild(bits);
       const label = el('div', { class: 'label', html: it.label });
       byte.appendChild(label);
+      if (it.sub) {
+        byte.appendChild(el('div', { class: 'byte-sub', html: it.sub }));
+      }
       row.appendChild(byte);
     });
     return row;
+  }
+
+  const KIND_COLOR = {
+    mode: '#62d0ff',
+    len: '#ffd166',
+    data: '#7ee787',
+    term: '#a5a5a5',
+    pad: '#777',
+    padbyte: '#cf83ff',
+  };
+  const KIND_NAME = {
+    mode: 'modo',
+    len: 'len',
+    data: 'dato',
+    term: 'term',
+    pad: 'pad',
+    padbyte: 'padB',
+  };
+
+  // Etiqueta corta para un segmento dentro de un codeword.
+  // Si el segmento es de datos, indica qué porción del byte origen ocupa
+  // (los bits de un byte dato se numeran 7..0 — alto a bajo).
+  function segmentLabel(seg) {
+    const p = seg.part;
+    if (p.kind === 'data') {
+      const startInByte = 7 - seg.firstBitInPart;
+      const endInByte = startInByte - (seg.count - 1);
+      const range = (seg.count === 8)
+        ? '[7..0]'
+        : (seg.count === 1 ? `[${startInByte}]` : `[${startInByte}..${endInByte}]`);
+      const ch = (p.char === '·') ? `0x${p.byteVal.toString(16).toUpperCase().padStart(2,'0')}` : `'${p.char}'`;
+      return `${ch}${range}`;
+    }
+    if (p.kind === 'mode') return 'modo(0100)';
+    if (p.kind === 'len') {
+      const startInLen = 7 - seg.firstBitInPart;
+      const endInLen = startInLen - (seg.count - 1);
+      return seg.count === 8 ? 'len[7..0]' : `len[${startInLen}..${endInLen}]`;
+    }
+    if (p.kind === 'term') return 'term';
+    if (p.kind === 'pad') return 'pad';
+    if (p.kind === 'padbyte') return `pad ${p.label.replace('Pad ', '')}`;
+    return p.kind;
+  }
+
+  function segmentBitColors(segments) {
+    const out = new Array(8).fill(null);
+    for (const seg of segments) {
+      for (let k = 0; k < seg.count; k++) {
+        out[seg.startBit + k] = KIND_COLOR[seg.part.kind] || '#888';
+      }
+    }
+    return out;
   }
 
   // ---- Render: matriz QR como SVG ----
@@ -188,7 +254,8 @@
       const items = result.bytes.map((b, i) => ({
         bits: fmtBin(b, 8),
         color: colorFor(i),
-        label: `<b>${fmtHex(b)}</b> ${printable(b)}`,
+        top: `<span class="big-char">${escapeHtml(printable(b))}</span><span class="byte-idx">byte ${i}</span>`,
+        label: `<b>${fmtHex(b)}</b>`,
       }));
       body.appendChild(renderByteRow(items));
       const kv = el('div', { class: 'kv' });
@@ -246,14 +313,65 @@
       const body = makeStep(
         3,
         'Agrupación en bytes (codewords) de 8 bits',
-        'El flujo de bits se trocea en bloques de 8 bits. Estos son los <b>codewords de datos</b> que finalmente entran al QR.'
+        'El flujo de bits se trocea en bloques de 8 bits. <b>Los caracteres no se alinean con los codewords</b>: por culpa del prefijo modo (4 bits) + longitud (8 bits), cada carácter queda <i>partido entre dos codewords</i>. Cada bit se tiñe debajo según su origen (modo/longitud/datos/terminador/padding).'
       );
-      const items = result.dataBytes.map((b, i) => ({
-        bits: fmtBin(b, 8),
-        color: colorFor(i),
-        label: `cw#${i} <b>${fmtHex(b)}</b>`,
-      }));
+
+      // leyenda de colores por origen
+      const legend = el('div', { class: 'legend' });
+      [['mode','modo'],['len','longitud'],['data','dato'],['term','terminador'],['pad','pad bit'],['padbyte','pad byte']].forEach(([k, name]) => {
+        legend.appendChild(el('span', { class: 'chip' }, [
+          el('span', { class: 'swatch', style: 'background:' + KIND_COLOR[k] }), name,
+        ]));
+      });
+      body.appendChild(legend);
+
+      const cwSegs = QR.annotateCodewords(result.bsParts);
+      const items = result.dataBytes.map((b, i) => {
+        const segs = cwSegs[i] || [];
+        const segLabels = segs.map(segmentLabel);
+        const topBits = [];
+        for (const s of segs) {
+          topBits.push(`<span style="color:${KIND_COLOR[s.part.kind]}">${segmentLabel(s)}</span>`);
+        }
+        // carácter destacado: si en el codeword hay datos, mostramos el primero
+        const dataSeg = segs.find((s) => s.part.kind === 'data');
+        const bigChar = dataSeg
+          ? `<span class="big-char">${escapeHtml(dataSeg.part.char)}</span>`
+          : (segs[0] ? `<span class="big-char dim">${KIND_NAME[segs[0].part.kind] || ''}</span>` : '');
+        return {
+          bits: fmtBin(b, 8),
+          color: colorFor(i),
+          bitColors: segmentBitColors(segs),
+          top: `${bigChar}<span class="byte-idx">cw#${i}</span>`,
+          label: `<b>${fmtHex(b)}</b>`,
+          sub: topBits.join(' <span class="sep">|</span> '),
+        };
+      });
       body.appendChild(renderByteRow(items));
+
+      // tabla resumen por codeword
+      const tab = el('table', { class: 'cw-table' });
+      const head = el('tr');
+      ['#','Hex','Bin','Contenido'].forEach((h) => head.appendChild(el('th', null, [h])));
+      tab.appendChild(head);
+      result.dataBytes.forEach((b, i) => {
+        const segs = cwSegs[i] || [];
+        const tr = el('tr');
+        tr.appendChild(el('td', null, [`cw${i}`]));
+        tr.appendChild(el('td', { class: 'mono' }, [fmtHex(b)]));
+        tr.appendChild(el('td', { class: 'mono' }, [fmtBin(b, 8)]));
+        const contentTd = el('td', { class: 'mono' });
+        segs.forEach((s, idx) => {
+          if (idx > 0) contentTd.appendChild(document.createTextNode(' | '));
+          const span = el('span');
+          span.style.color = KIND_COLOR[s.part.kind];
+          span.textContent = segmentLabel(s);
+          contentTd.appendChild(span);
+        });
+        tr.appendChild(contentTd);
+        tab.appendChild(tr);
+      });
+      body.appendChild(tab);
     }
 
     // ---------- PASO 4: ECC Reed-Solomon ----------
@@ -325,6 +443,7 @@
       const grid = result.placedMatrix.m;
       const N = result.placedMatrix.N;
       const totalDataBytes = result.dataBytes.length;
+      const cwSegs = QR.annotateCodewords(result.bsParts);
       const overlays = [];
       const outlines = [];
       const labels = [];
@@ -337,26 +456,69 @@
         }
         outlines.push({ cells, color });
         if (cells.length > 0) {
-          // etiqueta en la primera celda de cada grupo
           const [r0, c0] = cells[0];
           labels.push({ r: r0, c: c0, text: String(g), color: '#04212d' });
+          // etiqueta secundaria con el carácter del codeword (si tiene)
+          const segs = isData ? cwSegs[g] : null;
+          const dataSeg = segs && segs.find((s) => s.part.kind === 'data');
+          if (dataSeg && cells.length >= 2) {
+            const [r1, c1] = cells[1];
+            labels.push({ r: r1, c: c1, text: dataSeg.part.char, color: '#04212d' });
+          }
         }
       }
       const svg = renderMatrix(grid, N, {
-        cell: 18,
+        cell: 22,
         cellOverlay: overlays,
         groupOutlines: outlines,
         groupLabels: labels,
       });
-      const card = el('div', { class: 'qr-card', style: 'max-width:640px;margin:0 auto;' });
+      const card = el('div', { class: 'qr-card', style: 'max-width:760px;margin:0 auto;' });
       card.appendChild(svg);
       card.appendChild(el('div', { class: 'caption' }, [
-        `${path.length} módulos de datos (${path.length / 8 | 0} grupos de 8 bits + ${path.length % 8} restantes)`,
+        `${path.length} módulos de datos · ${Math.ceil(path.length / 8)} grupos. El número del grupo está en la 1.ª celda; el carácter (si lo hay) en la 2.ª.`,
       ]));
       body.appendChild(card);
 
+      // tabla con cada grupo y su contenido
+      const tab = el('table', { class: 'cw-table' });
+      const head = el('tr');
+      ['Grupo','Tipo','Hex','Contenido'].forEach((h) => head.appendChild(el('th', null, [h])));
+      tab.appendChild(head);
+      for (let g = 0; g < Math.ceil(path.length / 8); g++) {
+        const isData = g < totalDataBytes;
+        const isEcc = g >= totalDataBytes;
+        const tr = el('tr');
+        const tdN = el('td');
+        const swatch = el('span', { class: 'cw-swatch' });
+        swatch.style.background = isData ? colorFor(g) : '#ff7ab6';
+        tdN.appendChild(swatch);
+        tdN.appendChild(document.createTextNode(`#${g}`));
+        tr.appendChild(tdN);
+        tr.appendChild(el('td', null, [isEcc ? 'ECC' : 'datos']));
+        tr.appendChild(el('td', { class: 'mono' }, [
+          g < result.finalCw.length ? fmtHex(result.finalCw[g]) : '—',
+        ]));
+        const contentTd = el('td', { class: 'mono' });
+        if (isData) {
+          const segs = cwSegs[g] || [];
+          segs.forEach((s, idx) => {
+            if (idx > 0) contentTd.appendChild(document.createTextNode(' | '));
+            const span = el('span');
+            span.style.color = KIND_COLOR[s.part.kind];
+            span.textContent = segmentLabel(s);
+            contentTd.appendChild(span);
+          });
+        } else {
+          contentTd.appendChild(document.createTextNode('Reed-Solomon ECC'));
+        }
+        tr.appendChild(contentTd);
+        tab.appendChild(tr);
+      }
+      body.appendChild(tab);
+
       body.appendChild(el('div', { class: 'note', html:
-        'Truco para leer a simple vista: localiza los buscadores (esquinas), ignora la columna y fila de tiempo, y ve siguiendo el zigzag desde la esquina inferior-derecha. Cada 8 módulos consecutivos en ese recorrido es un byte.' }));
+        'Truco para leer a simple vista: localiza los buscadores (esquinas), ignora la columna y fila de tiempo, y ve siguiendo el zigzag desde la esquina inferior-derecha. Cada 8 módulos consecutivos en ese recorrido es un byte. <b>Recuerda:</b> los caracteres están desplazados 12 bits (4 modo + 8 longitud), por eso un carácter ocupa la mitad baja de un codeword y la mitad alta del siguiente.' }));
     }
 
     // ---------- PASO 8: las 8 máscaras ----------
@@ -433,6 +595,7 @@
       if (showOverlay) {
         const path = result.dataPath;
         const totalDataBytes = result.dataBytes.length;
+        const cwSegs = QR.annotateCodewords(result.bsParts);
         const overlays = [];
         const outlines = [];
         const labels = [];
@@ -442,15 +605,22 @@
           const color = isData ? colorFor(g) : '#ff7ab6';
           for (const [r, c] of cells) overlays.push({ r, c, color, opacity: 0.45 });
           outlines.push({ cells, color });
-          if (cells.length) labels.push({ r: cells[0][0], c: cells[0][1], text: String(g), color: '#000' });
+          if (cells.length) {
+            labels.push({ r: cells[0][0], c: cells[0][1], text: String(g), color: '#000' });
+            const segs = isData ? cwSegs[g] : null;
+            const dataSeg = segs && segs.find((s) => s.part.kind === 'data');
+            if (dataSeg && cells.length >= 2) {
+              labels.push({ r: cells[1][0], c: cells[1][1], text: dataSeg.part.char, color: '#000' });
+            }
+          }
         }
         const svg2 = renderMatrix(grid, N, {
-          cell: 18,
+          cell: 22,
           cellOverlay: overlays,
           groupOutlines: outlines,
           groupLabels: labels,
         });
-        cards.appendChild(qrCard(svg2, 'QR con grupos de 8 bits resaltados', true));
+        cards.appendChild(qrCard(svg2, 'QR con grupos de 8 bits + carácter en cada grupo', true));
       }
 
       body.appendChild(cards);
@@ -480,6 +650,14 @@
   function printable(b) {
     if (b >= 0x20 && b < 0x7f) return String.fromCharCode(b);
     return '·';
+  }
+
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
   }
 
   $('#btn-generate').addEventListener('click', generate);

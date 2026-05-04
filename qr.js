@@ -113,6 +113,9 @@
         label: `Dato[${i}]=0x${bytes[i].toString(16).padStart(2, '0').toUpperCase()} '${printable(bytes[i])}'`,
         bits: bytes[i].toString(2).padStart(8, '0'),
         kind: 'data',
+        byteIdx: i,
+        char: printable(bytes[i]),
+        byteVal: bytes[i],
       });
     }
     let used = parts.reduce((s, p) => s + p.bits.length, 0);
@@ -444,6 +447,41 @@
     };
   }
 
+  // Decompone los codewords (bytes) mostrando de qué parte lógica del
+  // bitstream proviene cada bit. Devuelve, por cada codeword, una lista de
+  // segmentos consecutivos {part, count, startBit} donde startBit es el
+  // primer bit (0..7, MSB→LSB) que ocupa ese segmento dentro del codeword.
+  function annotateCodewords(bsParts) {
+    const sources = [];
+    bsParts.forEach((p) => {
+      for (let i = 0; i < p.bits.length; i++) {
+        sources.push({ part: p, bitInPart: i });
+      }
+    });
+    const cws = [];
+    for (let cwIdx = 0; cwIdx < Math.ceil(sources.length / 8); cwIdx++) {
+      const start = cwIdx * 8;
+      const slice = sources.slice(start, start + 8);
+      const segments = [];
+      let cur = null;
+      slice.forEach((src, idx) => {
+        if (!cur || cur.part !== src.part) {
+          cur = {
+            part: src.part,
+            count: 1,
+            startBit: idx,
+            firstBitInPart: src.bitInPart,
+          };
+          segments.push(cur);
+        } else {
+          cur.count++;
+        }
+      });
+      cws.push(segments);
+    }
+    return cws;
+  }
+
   global.QR = {
     encode,
     MASKS,
@@ -451,5 +489,6 @@
     VERSIONS,
     formatBits,
     penalty,
+    annotateCodewords,
   };
 })(window);
