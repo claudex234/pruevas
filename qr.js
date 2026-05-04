@@ -482,6 +482,101 @@
     return cws;
   }
 
+  // Para cada bit colocado en la path zigzag (en orden), determina su origen
+  // *original* en el bitstream (antes del intercalado). Devuelve un array
+  // paralelo a result.dataPath, con elementos del tipo:
+  //   { kind: 'mode'|'len'|'data'|'term'|'pad'|'padbyte'|'ecc'|'remainder',
+  //     part?: bsPart,             // si proviene del bitstream original
+  //     bitInPart?: number,        // posición del bit dentro de la parte
+  //     dataByteIdx?: number,      // índice del byte de datos en dataBytes
+  //     cwIdx: number, bitInCw: number,   // posición en el flujo final (intercalado)
+  //     block?: number, ecIdx?: number    // info para bits de ECC
+  //   }
+  function bitOrigins(result) {
+    const { bsParts, blocks, dataPath } = result;
+
+    const sources = [];
+    bsParts.forEach((p) => {
+      for (let i = 0; i < p.bits.length; i++) sources.push({ part: p, bitInPart: i });
+    });
+
+    // Mapa "forward" del intercalado: posición en finalCw -> {type, block, idx}
+    const cwMeta = [];
+    const dataMax = Math.max.apply(null, blocks.map((b) => b.data.length));
+    const ecMax = Math.max.apply(null, blocks.map((b) => b.ec.length));
+    for (let i = 0; i < dataMax; i++)
+      for (let bi = 0; bi < blocks.length; bi++)
+        if (i < blocks[bi].data.length) cwMeta.push({ type: 'data', block: bi, idx: i });
+    for (let i = 0; i < ecMax; i++)
+      for (let bi = 0; bi < blocks.length; bi++)
+        if (i < blocks[bi].ec.length) cwMeta.push({ type: 'ec', block: bi, idx: i });
+
+    // Offset de cada bloque dentro de dataBytes original
+    const blockOffsets = [];
+    let off = 0;
+    for (const b of blocks) { blockOffsets.push(off); off += b.data.length; }
+
+    const origins = [];
+    for (let i = 0; i < dataPath.length; i++) {
+      const cwIdx = Math.floor(i / 8);
+      const bitInCw = i % 8;
+      if (cwIdx >= cwMeta.length) {
+        origins.push({ kind: 'remainder', cwIdx, bitInCw });
+        continue;
+      }
+      const meta = cwMeta[cwIdx];
+      if (meta.type === 'ec') {
+        origins.push({ kind: 'ecc', block: meta.block, ecIdx: meta.idx, cwIdx, bitInCw });
+        continue;
+      }
+      const dataBytesIdx = blockOffsets[meta.block] + meta.idx;
+      const src = sources[dataBytesIdx * 8 + bitInCw];
+      if (!src) {
+        origins.push({ kind: 'unknown', cwIdx, bitInCw });
+        continue;
+      }
+      origins.push({
+        kind: src.part.kind,
+        part: src.part,
+        bitInPart: src.bitInPart,
+        dataByteIdx: dataBytesIdx,
+        cwIdx, bitInCw,
+      });
+    }
+    return origins;
+  }
+
+  // Devuelve la lista de "grupos por carácter": 8 bits contiguos en la
+  // bitstream que forman un byte de datos. Para v1 (1 bloque) las celdas
+  // son contiguas en la path; con varios bloques pueden no serlo, pero
+  // siempre se devuelven en orden.
+  function characterGroups(result) {
+    const origins = bitOrigins(result);
+    const path = result.dataPath;
+    const groups = [];
+    const byIdx = new Map();
+    origins.forEach((o, i) => {
+      if (o.kind !== 'data') return;
+      const key = o.part.byteIdx;
+      let g = byIdx.get(key);
+      if (!g) {
+        g = {
+          byteIdx: o.part.byteIdx,
+          char: o.part.char,
+          byteVal: o.part.byteVal,
+          cells: [],
+          bitPositions: [],
+        };
+        byIdx.set(key, g);
+        groups.push(g);
+      }
+      g.cells.push(path[i]);
+      g.bitPositions.push(i);
+    });
+    groups.sort((a, b) => a.byteIdx - b.byteIdx);
+    return groups;
+  }
+
   global.QR = {
     encode,
     MASKS,
@@ -490,5 +585,7 @@
     formatBits,
     penalty,
     annotateCodewords,
+    bitOrigins,
+    characterGroups,
   };
 })(window);

@@ -173,23 +173,29 @@
       }
     }
 
-    // overlay: contorno por grupo
-    if (opts.groupOutlines) {
-      for (const g of opts.groupOutlines) {
+    // overlay: contorno por grupo (admite varias capas vía opts.groupOutlines y opts.groupOutlines2)
+    function drawOutlines(layer, style) {
+      if (!layer) return;
+      const inset = style.inset != null ? style.inset : 1;
+      const width = style.width != null ? style.width : Math.max(1.5, cell * 0.16);
+      for (const g of layer) {
         for (const [r0, c0] of g.cells) {
           const r = document.createElementNS(ns, 'rect');
-          r.setAttribute('x', (c0 + margin) * cell + 1);
-          r.setAttribute('y', (r0 + margin) * cell + 1);
-          r.setAttribute('width', cell - 2);
-          r.setAttribute('height', cell - 2);
+          r.setAttribute('x', (c0 + margin) * cell + inset);
+          r.setAttribute('y', (r0 + margin) * cell + inset);
+          r.setAttribute('width', cell - 2 * inset);
+          r.setAttribute('height', cell - 2 * inset);
           r.setAttribute('fill', 'none');
           r.setAttribute('stroke', g.color);
-          r.setAttribute('stroke-width', Math.max(1.5, cell * 0.16));
-          r.setAttribute('opacity', '0.95');
+          r.setAttribute('stroke-width', width);
+          r.setAttribute('opacity', style.opacity != null ? style.opacity : 0.95);
+          if (style.dash) r.setAttribute('stroke-dasharray', style.dash);
           svg.appendChild(r);
         }
       }
     }
+    drawOutlines(opts.groupOutlines, opts.groupOutlinesStyle || {});
+    drawOutlines(opts.groupOutlines2, opts.groupOutlines2Style || { inset: 3, dash: '3,2', width: Math.max(1.2, cell * 0.10) });
 
     // numeración opcional sobre cada grupo (centro)
     if (opts.groupLabels) {
@@ -243,6 +249,7 @@
       return;
     }
     const showOverlay = $('#input-overlay').checked;
+    const viewMode = $('#input-view') ? $('#input-view').value : 'cw'; // 'cw' | 'char' | 'both'
 
     // ---------- PASO 1: texto -> bytes ----------
     {
@@ -436,7 +443,9 @@
       const body = makeStep(
         7,
         'Colocación de datos en zigzag (cada 8 módulos = 1 byte)',
-        'Los bits se escriben recorriendo la matriz por columnas de 2, en zigzag de abajo a arriba y de arriba a abajo, saltando la columna de tiempo. <b>Cada 8 módulos consecutivos en este recorrido = 1 codeword</b>. Cada grupo se colorea para que puedas <i>seguirlo con la vista</i>.'
+        'Los bits se escriben recorriendo la matriz por columnas de 2, en zigzag de abajo a arriba y de arriba a abajo, saltando la columna de tiempo. ' +
+        '<b>Cada 8 módulos consecutivos = 1 codeword</b>. Pero <b>los caracteres también ocupan 8 bits</b> y <i>no se alinean con los codewords</i> (van desplazados 4 bits por el prefijo modo+longitud). ' +
+        'Usa el selector <i>Vista</i> de arriba para ver los grupos por <b>codewords</b> (los que define la espec) o por <b>caracteres</b> (los 8 bits propios de cada letra), o ambos a la vez.'
       );
 
       const path = result.dataPath;
@@ -444,40 +453,80 @@
       const N = result.placedMatrix.N;
       const totalDataBytes = result.dataBytes.length;
       const cwSegs = QR.annotateCodewords(result.bsParts);
+
+      const showCw = viewMode === 'cw' || viewMode === 'both';
+      const showChar = viewMode === 'char' || viewMode === 'both';
+
       const overlays = [];
-      const outlines = [];
+      const cwOutlines = [];
+      const charOutlines = [];
       const labels = [];
-      for (let g = 0; g < Math.ceil(path.length / 8); g++) {
-        const cells = path.slice(g * 8, g * 8 + 8);
-        const isData = g < totalDataBytes;
-        const color = isData ? colorFor(g) : '#ff7ab6';
-        for (const [r, c] of cells) {
-          overlays.push({ r, c, color, opacity: 0.35 });
-        }
-        outlines.push({ cells, color });
-        if (cells.length > 0) {
-          const [r0, c0] = cells[0];
-          labels.push({ r: r0, c: c0, text: String(g), color: '#04212d' });
-          // etiqueta secundaria con el carácter del codeword (si tiene)
-          const segs = isData ? cwSegs[g] : null;
-          const dataSeg = segs && segs.find((s) => s.part.kind === 'data');
-          if (dataSeg && cells.length >= 2) {
-            const [r1, c1] = cells[1];
-            labels.push({ r: r1, c: c1, text: dataSeg.part.char, color: '#04212d' });
+
+      if (showCw) {
+        for (let g = 0; g < Math.ceil(path.length / 8); g++) {
+          const cells = path.slice(g * 8, g * 8 + 8);
+          const isData = g < totalDataBytes;
+          const color = isData ? colorFor(g) : '#ff7ab6';
+          for (const [r, c] of cells) {
+            overlays.push({ r, c, color, opacity: 0.35 });
+          }
+          cwOutlines.push({ cells, color });
+          if (cells.length > 0) {
+            const [r0, c0] = cells[0];
+            labels.push({ r: r0, c: c0, text: String(g), color: '#04212d' });
+            // (en vista por codewords pura no etiquetamos ya el carácter,
+            // porque era engañoso: una letra cae siempre entre dos codewords.)
           }
         }
       }
-      const svg = renderMatrix(grid, N, {
+
+      const charGroups = QR.characterGroups(result);
+      if (showChar) {
+        charGroups.forEach((cg) => {
+          const color = colorFor(cg.byteIdx);
+          charOutlines.push({ cells: cg.cells, color });
+          if (!showCw) {
+            for (const [r, c] of cg.cells) overlays.push({ r, c, color, opacity: 0.35 });
+          }
+          // etiqueta del carácter en la 1.ª celda del grupo
+          if (cg.cells.length > 0) {
+            const [r0, c0] = cg.cells[0];
+            const display = cg.char === '·' ? `0x${cg.byteVal.toString(16).toUpperCase().padStart(2,'0')}` : cg.char;
+            labels.push({ r: r0, c: c0, text: display, color: '#04212d' });
+          }
+        });
+      }
+
+      const svgOpts = {
         cell: 22,
         cellOverlay: overlays,
-        groupOutlines: outlines,
         groupLabels: labels,
-      });
+      };
+      if (showCw) {
+        svgOpts.groupOutlines = cwOutlines;
+        svgOpts.groupOutlinesStyle = { inset: 1 };
+      }
+      if (showChar) {
+        if (showCw) {
+          svgOpts.groupOutlines2 = charOutlines;
+          svgOpts.groupOutlines2Style = { inset: 4, dash: '3,2', width: Math.max(1.2, 22 * 0.10) };
+        } else {
+          svgOpts.groupOutlines = charOutlines;
+          svgOpts.groupOutlinesStyle = { inset: 1 };
+        }
+      }
+      const svg = renderMatrix(grid, N, svgOpts);
       const card = el('div', { class: 'qr-card', style: 'max-width:760px;margin:0 auto;' });
       card.appendChild(svg);
-      card.appendChild(el('div', { class: 'caption' }, [
-        `${path.length} módulos de datos · ${Math.ceil(path.length / 8)} grupos. El número del grupo está en la 1.ª celda; el carácter (si lo hay) en la 2.ª.`,
-      ]));
+      const caption =
+        viewMode === 'char'
+          ? `${charGroups.length} caracteres · 8 bits cada uno. El recuadro envuelve los <b>8 módulos de la letra</b>; ya no coincide con los codewords (están desplazados 4 bits).`
+          : viewMode === 'both'
+          ? `${Math.ceil(path.length / 8)} codewords (sólido) + ${charGroups.length} caracteres (línea discontinua). Verás cómo cada carácter cruza la frontera de dos codewords.`
+          : `${path.length} módulos de datos · ${Math.ceil(path.length / 8)} grupos. El número del grupo está en la 1.ª celda.`;
+      const cap = el('div', { class: 'caption' });
+      cap.innerHTML = caption;
+      card.appendChild(cap);
       body.appendChild(card);
 
       // tabla con cada grupo y su contenido
@@ -516,6 +565,42 @@
         tab.appendChild(tr);
       }
       body.appendChild(tab);
+
+      // tabla por carácter: cada letra como sus 8 bits propios y los codewords que cruza
+      if (showChar) {
+        const ctitle = el('div', {
+          class: 'k',
+          style: 'color:var(--muted);font-size:12px;margin:14px 0 4px;',
+        }, ['Vista por carácter — cada letra son 8 bits propios (cruzan codewords):']);
+        body.appendChild(ctitle);
+        const ctab = el('table', { class: 'cw-table' });
+        const chead = el('tr');
+        ['Carácter','Hex','Bin (8 bits)','Codewords que cruza'].forEach((h) => chead.appendChild(el('th', null, [h])));
+        ctab.appendChild(chead);
+        charGroups.forEach((cg) => {
+          const tr = el('tr');
+          const tdC = el('td');
+          const sw = el('span', { class: 'cw-swatch' });
+          sw.style.background = colorFor(cg.byteIdx);
+          tdC.appendChild(sw);
+          const display = cg.char === '·' ? `0x${cg.byteVal.toString(16).toUpperCase().padStart(2,'0')}` : `'${cg.char}'`;
+          tdC.appendChild(document.createTextNode(`#${cg.byteIdx} ${display}`));
+          tr.appendChild(tdC);
+          tr.appendChild(el('td', { class: 'mono' }, [fmtHex(cg.byteVal)]));
+          tr.appendChild(el('td', { class: 'mono' }, [fmtBin(cg.byteVal, 8)]));
+          // qué codewords (índices en finalCw) y qué bits dentro de ellos cruza
+          const cwSpan = new Map(); // cwIdx -> count
+          cg.bitPositions.forEach((bp) => {
+            const ci = Math.floor(bp / 8);
+            cwSpan.set(ci, (cwSpan.get(ci) || 0) + 1);
+          });
+          const parts = [];
+          for (const [ci, cnt] of cwSpan) parts.push(`cw${ci} (${cnt} bit${cnt === 1 ? '' : 's'})`);
+          tr.appendChild(el('td', { class: 'mono' }, [parts.join(' + ')]));
+          ctab.appendChild(tr);
+        });
+        body.appendChild(ctab);
+      }
 
       body.appendChild(el('div', { class: 'note', html:
         'Truco para leer a simple vista: localiza los buscadores (esquinas), ignora la columna y fila de tiempo, y ve siguiendo el zigzag desde la esquina inferior-derecha. Cada 8 módulos consecutivos en ese recorrido es un byte. <b>Recuerda:</b> los caracteres están desplazados 12 bits (4 modo + 8 longitud), por eso un carácter ocupa la mitad baja de un codeword y la mitad alta del siguiente.' }));
@@ -595,32 +680,63 @@
       if (showOverlay) {
         const path = result.dataPath;
         const totalDataBytes = result.dataBytes.length;
-        const cwSegs = QR.annotateCodewords(result.bsParts);
+
+        const showCw10 = viewMode === 'cw' || viewMode === 'both';
+        const showChar10 = viewMode === 'char' || viewMode === 'both';
+
         const overlays = [];
-        const outlines = [];
+        const cwOutlines = [];
+        const charOutlines = [];
         const labels = [];
-        for (let g = 0; g < Math.ceil(path.length / 8); g++) {
-          const cells = path.slice(g * 8, g * 8 + 8);
-          const isData = g < totalDataBytes;
-          const color = isData ? colorFor(g) : '#ff7ab6';
-          for (const [r, c] of cells) overlays.push({ r, c, color, opacity: 0.45 });
-          outlines.push({ cells, color });
-          if (cells.length) {
-            labels.push({ r: cells[0][0], c: cells[0][1], text: String(g), color: '#000' });
-            const segs = isData ? cwSegs[g] : null;
-            const dataSeg = segs && segs.find((s) => s.part.kind === 'data');
-            if (dataSeg && cells.length >= 2) {
-              labels.push({ r: cells[1][0], c: cells[1][1], text: dataSeg.part.char, color: '#000' });
+
+        if (showCw10) {
+          for (let g = 0; g < Math.ceil(path.length / 8); g++) {
+            const cells = path.slice(g * 8, g * 8 + 8);
+            const isData = g < totalDataBytes;
+            const color = isData ? colorFor(g) : '#ff7ab6';
+            for (const [r, c] of cells) overlays.push({ r, c, color, opacity: 0.45 });
+            cwOutlines.push({ cells, color });
+            if (cells.length) {
+              labels.push({ r: cells[0][0], c: cells[0][1], text: String(g), color: '#000' });
             }
           }
         }
-        const svg2 = renderMatrix(grid, N, {
-          cell: 22,
-          cellOverlay: overlays,
-          groupOutlines: outlines,
-          groupLabels: labels,
-        });
-        cards.appendChild(qrCard(svg2, 'QR con grupos de 8 bits + carácter en cada grupo', true));
+
+        const charGroups10 = QR.characterGroups(result);
+        if (showChar10) {
+          charGroups10.forEach((cg) => {
+            const color = colorFor(cg.byteIdx);
+            charOutlines.push({ cells: cg.cells, color });
+            if (!showCw10) {
+              for (const [r, c] of cg.cells) overlays.push({ r, c, color, opacity: 0.45 });
+            }
+            if (cg.cells.length) {
+              const display = cg.char === '·' ? `0x${cg.byteVal.toString(16).toUpperCase().padStart(2,'0')}` : cg.char;
+              labels.push({ r: cg.cells[0][0], c: cg.cells[0][1], text: display, color: '#000' });
+            }
+          });
+        }
+
+        const svgOpts = { cell: 22, cellOverlay: overlays, groupLabels: labels };
+        if (showCw10) {
+          svgOpts.groupOutlines = cwOutlines;
+        }
+        if (showChar10) {
+          if (showCw10) {
+            svgOpts.groupOutlines2 = charOutlines;
+            svgOpts.groupOutlines2Style = { inset: 4, dash: '3,2', width: Math.max(1.2, 22 * 0.10) };
+          } else {
+            svgOpts.groupOutlines = charOutlines;
+          }
+        }
+        const svg2 = renderMatrix(grid, N, svgOpts);
+        const caption =
+          viewMode === 'char'
+            ? 'QR con grupos por carácter (8 bits cada uno)'
+            : viewMode === 'both'
+            ? 'QR con codewords (sólido) + caracteres (línea discontinua)'
+            : 'QR con grupos de 8 bits (codewords) numerados';
+        cards.appendChild(qrCard(svg2, caption, true));
       }
 
       body.appendChild(cards);
@@ -662,8 +778,9 @@
 
   $('#btn-generate').addEventListener('click', generate);
   $('#input-text').addEventListener('keydown', (e) => { if (e.key === 'Enter') generate(); });
-  ['#input-ecc', '#input-mask', '#input-overlay'].forEach((s) => {
-    $(s).addEventListener('change', generate);
+  ['#input-ecc', '#input-mask', '#input-overlay', '#input-view'].forEach((s) => {
+    const node = $(s);
+    if (node) node.addEventListener('change', generate);
   });
 
   // primera ejecución
