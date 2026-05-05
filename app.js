@@ -371,9 +371,20 @@
     {
       const body = makeStep(
         4,
-        'Corrección de errores Reed-Solomon',
-        `Se calculan <b>${result.cfg.ec}</b> codewords de ECC por bloque (en GF(256)). Esto permite recuperar datos si parte del QR está dañado.`
+        'Corrección de errores Reed-Solomon (no son copias)',
+        `Aquí está la respuesta a "<i>¿dónde están los duplicados de la H?</i>": <b>no existen</b>. La redundancia se hace con <b>Reed-Solomon</b>, que a partir de los <b>${result.dataBytes.length}</b> bytes de datos calcula <b>${result.cfg.ec}</b> bytes de <i>paridad</i> (ECC) por bloque. <b>Cada bit de la H influye matemáticamente en los ${result.cfg.ec} bytes ECC</b>, pero ningún módulo del QR es una "copia" de la H.`
       );
+
+      // Bloque explicativo de cómo se codifica
+      body.appendChild(el('div', { class: 'note', html:
+        '<b>Cómo se codifica (resumen):</b><br>' +
+        '1. Los datos (incluida la H = <code>0x48</code>) se ven como un <b>polinomio</b> ' +
+        '<code>m(x) = d₀·x<sup>n-1</sup> + d₁·x<sup>n-2</sup> + … + d<sub>n-1</sub></code>, donde cada coeficiente es un byte (en GF(256)).<br>' +
+        `2. Se multiplica por <code>x<sup>${result.cfg.ec}</sup></code> y se calcula el resto al dividir por un <b>polinomio generador</b> ` +
+        `<code>g(x) = ∏(x − α<sup>i</sup>)</code> de grado ${result.cfg.ec}.<br>` +
+        `3. El resto son los <b>${result.cfg.ec} bytes ECC</b>, que se concatenan a los datos.<br><br>` +
+        'Como cada byte ECC es un <i>resto polinomial</i> que mezcla todos los datos, <b>basta con cambiar 1 bit de la H para que los ' + result.cfg.ec + ' bytes ECC cambien</b>. Ahí vive la redundancia: si el lector pierde hasta ⌊' + result.cfg.ec + '/2⌋ = ' + Math.floor(result.cfg.ec / 2) + ' bytes (datos o ECC), el algoritmo de RS puede reconstruir los originales <i>resolviendo el sistema</i>, sin necesidad de copias.' }));
+
       result.blocks.forEach((blk, bi) => {
         const wrap = el('div', { style: 'margin-bottom:14px;' });
         wrap.appendChild(el('div', { class: 'k', style:'color:var(--muted);font-size:12px;margin-bottom:4px;' }, [`Bloque ${bi + 1} — ${blk.data.length} datos + ${blk.ec.length} ECC`]));
@@ -388,6 +399,21 @@
         wrap.appendChild(renderByteRow(dataItems.concat(ecItems)));
         body.appendChild(wrap);
       });
+
+      // Demostración concreta: flip 1 bit de la H y mostrar cómo cambian TODOS los bytes ECC
+      if (result.bytes.length > 0 && result.blocks.length > 0) {
+        const popcount = (x) => { let n = 0; while (x) { n += x & 1; x >>>= 1; } return n; };
+        const original = result.blocks[0].ec.slice();
+        // recalcular ECC con el primer byte de datos invertido en 1 bit
+        const flippedData = result.blocks[0].data.slice();
+        flippedData[0] = flippedData[0] ^ 0x80; // flip bit alto
+        const flippedEc = QR.rsEncode(flippedData, result.cfg.ec);
+        const diffCount = original.reduce((s, b, i) => s + popcount(b ^ flippedEc[i]), 0);
+        const demo = el('div', { class: 'note', style: 'background:rgba(255,122,182,0.08);border-left-color:#ff7ab6;', html:
+          `<b>Demostración:</b> si invertimos <i>un solo bit</i> del primer byte de datos (la H pasa de <code>0x48</code> a <code>0xC8</code>), los <b>${result.cfg.ec} bytes ECC del bloque 1 cambian completamente</b> ` +
+          `(<b>${diffCount} bits ECC</b> distintos de los originales). Eso prueba que los ECC no son copias: son una huella global que depende de todos los datos.` });
+        body.appendChild(demo);
+      }
     }
 
     // ---------- PASO 5: interleaving ----------
@@ -452,16 +478,34 @@
         for (let g = 0; g < Math.ceil(path.length / 8); g++) {
           const cells = path.slice(g * 8, g * 8 + 8);
           const isData = g < totalDataBytes;
-          const color = isData ? colorFor(g) : '#ff7ab6';
-          for (const [r, c] of cells) {
-            overlays.push({ r, c, color, opacity: 0.35 });
+          const cwColor = isData ? colorFor(g) : '#ff7ab6';
+          // contorno del codeword (la rejilla de 8 bits)
+          cwOutlines.push({ cells, color: cwColor });
+          // tinte por sub-segmento: cada celda (= 1 bit) se colorea según
+          // a qué parte del bitstream pertenece (modo, len, char#k, term, pad).
+          // Así se ven los "medios grupos" de 4 bits dentro de cada codeword
+          // cuando un carácter cruza la frontera.
+          const segs = isData ? (cwSegs[g] || []) : null;
+          if (segs && segs.length > 0) {
+            for (const seg of segs) {
+              let segColor;
+              if (seg.part.kind === 'data') segColor = colorFor(seg.part.byteIdx);
+              else segColor = KIND_COLOR[seg.part.kind] || cwColor;
+              for (let k = 0; k < seg.count; k++) {
+                const idx = seg.startBit + k;
+                if (idx < cells.length) {
+                  const [r, c] = cells[idx];
+                  overlays.push({ r, c, color: segColor, opacity: 0.55 });
+                }
+              }
+            }
+          } else {
+            for (const [r, c] of cells) overlays.push({ r, c, color: cwColor, opacity: 0.35 });
           }
-          cwOutlines.push({ cells, color });
           if (cells.length > 0) {
+            // Etiqueta del codeword en su BIT 0 (= la 1.ª celda de la path)
             const [r0, c0] = cells[0];
             labels.push({ r: r0, c: c0, text: String(g), color: '#04212d' });
-            // (en vista por codewords pura no etiquetamos ya el carácter,
-            // porque era engañoso: una letra cae siempre entre dos codewords.)
           }
         }
       }
@@ -509,7 +553,7 @@
           ? `${charGroups.length} caracteres · 8 bits cada uno. El recuadro envuelve los <b>8 módulos de la letra</b>; ya no coincide con los codewords (están desplazados 4 bits).`
           : viewMode === 'both'
           ? `${Math.ceil(path.length / 8)} codewords (sólido) + ${charGroups.length} caracteres (línea discontinua). Verás cómo cada carácter cruza la frontera de dos codewords.`
-          : `${path.length} módulos de datos · ${Math.ceil(path.length / 8)} grupos. El número del grupo está en la 1.ª celda.`;
+          : `${path.length} módulos · ${Math.ceil(path.length / 8)} codewords. <b>Bit 0 etiquetado</b> con el nº de codeword. Dentro de cada codeword los <b>medios grupos de 4 bits</b> se tiñen con el color de su carácter de origen, así ves cómo H/O/L/A se reparten entre dos codewords.`;
       const cap = el('div', { class: 'caption' });
       cap.innerHTML = caption;
       card.appendChild(cap);
@@ -1085,30 +1129,49 @@
 
     let currentId = selectable.length > 0 ? selectable[0].id : null;
 
+    // Pre-calcular las celdas de TODOS los bytes ECC, agrupadas por bloque
+    const eccCellsByBlock = (() => {
+      const map = new Map();
+      origins.forEach((o, i) => {
+        if (o.kind !== 'ecc') return;
+        if (!map.has(o.block)) map.set(o.block, []);
+        map.get(o.block).push(path[i]);
+      });
+      return map;
+    })();
+
     function renderMatrixWith(selectedId) {
       const sel = selectable.find((s) => s.id === selectedId);
       const overlays = [];
       const outlines = [];
       const labels = [];
 
-      // 1) atenuar TODOS los módulos de datos para que destaque el seleccionado
-      for (const [r, c] of path) {
-        overlays.push({ r, c, color: '#ffffff', opacity: 0.0 }); // no-op pero deja sitio si quisiéramos atenuar
-      }
-
       if (sel) {
+        // Si es un carácter (kind=data), pintamos TAMBIÉN los ECC en rosa
+        // tenue: NO son copias literales — Reed-Solomon mezcla todos los
+        // bytes de datos al calcular los ECC, así que cada bit de H influye
+        // en TODOS los bytes ECC, pero ningún módulo es una "copia" de H.
+        if (sel.kind === 'data') {
+          eccCellsByBlock.forEach((cells) => {
+            for (const [r, c] of cells) overlays.push({ r, c, color: '#ff7ab6', opacity: 0.30 });
+            outlines.push({ cells, color: '#ff7ab6' });
+            if (cells.length) {
+              labels.push({ r: cells[0][0], c: cells[0][1], text: 'ECC', color: '#fff' });
+            }
+          });
+        }
         // resaltar las celdas del grupo elegido en color fuerte
         for (let i = 0; i < sel.cells.length; i++) {
           const [r, c] = sel.cells[i];
           overlays.push({ r, c, color: sel.color, opacity: 0.85 });
         }
         outlines.push({ cells: sel.cells, color: sel.color });
-        // etiqueta del grupo en su 1.ª celda
+        // etiqueta del grupo en su 1.ª celda (= bit 0)
         if (sel.cells.length) {
           const [r0, c0] = sel.cells[0];
           labels.push({ r: r0, c: c0, text: sel.label.length <= 2 ? sel.label : '★', color: '#04212d' });
         }
-        // numerar cada bit (0..n-1) sobre cada celda del grupo
+        // numerar cada bit (1..n-1) sobre cada celda del grupo (bit 0 ya lleva la etiqueta)
         for (let i = 1; i < sel.cells.length; i++) {
           const [r, c] = sel.cells[i];
           labels.push({ r, c, text: String(i), color: '#04212d' });
@@ -1127,7 +1190,9 @@
       matrixCard.appendChild(svg);
       const cap = el('div', { class: 'caption' });
       cap.innerHTML = sel
-        ? `Resaltado: <b>${escapeHtml(sel.label)}</b> · ${sel.size} módulos · QR <i>sin máscara</i>`
+        ? (sel.kind === 'data'
+          ? `Resaltado <b>${escapeHtml(sel.label)}</b> · ${sel.size} módulos · ECC en <span style="color:#ff7ab6">rosa</span> = bytes de paridad RS (no son copias)`
+          : `Resaltado: <b>${escapeHtml(sel.label)}</b> · ${sel.size} módulos · QR <i>sin máscara</i>`)
         : 'Selecciona un grupo arriba';
       matrixCard.appendChild(cap);
 

@@ -587,5 +587,6 @@
     annotateCodewords,
     bitOrigins,
     characterGroups,
+    rsEncode,
   };
 })(window);
