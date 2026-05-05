@@ -315,121 +315,8 @@
       body.appendChild(note);
     }
 
-    // ---------- PASO 3: agrupación en codewords (8 bits) ----------
-    {
-      const body = makeStep(
-        3,
-        'Agrupación en bytes (codewords) de 8 bits',
-        'El flujo de bits se trocea en bloques de 8 bits. <b>Los caracteres no se alinean con los codewords</b>: por culpa del prefijo modo (4 bits) + longitud (8 bits), cada carácter queda <i>partido entre dos codewords</i>. Cada bit se tiñe debajo según su origen (modo/longitud/datos/terminador/padding).'
-      );
-
-      // leyenda de colores por origen
-      const legend = el('div', { class: 'legend' });
-      [['mode','modo'],['len','longitud'],['data','dato'],['term','terminador'],['pad','pad bit'],['padbyte','pad byte']].forEach(([k, name]) => {
-        legend.appendChild(el('span', { class: 'chip' }, [
-          el('span', { class: 'swatch', style: 'background:' + KIND_COLOR[k] }), name,
-        ]));
-      });
-      body.appendChild(legend);
-
-      const cwSegs = QR.annotateCodewords(result.bsParts);
-      const items = result.dataBytes.map((b, i) => {
-        const segs = cwSegs[i] || [];
-        const topBits = [];
-        for (const s of segs) {
-          topBits.push(`<span style="color:${KIND_COLOR[s.part.kind]}">${segmentLabel(s)}</span>`);
-        }
-        // YA NO mostramos un único carácter "grande" sobre el codeword:
-        // era engañoso, hacía pensar que esa letra ocupaba el codeword
-        // entero cuando en realidad sólo aporta 4 bits.
-        return {
-          bits: fmtBin(b, 8),
-          color: colorFor(i),
-          bitColors: segmentBitColors(segs),
-          top: `<span class="big-char dim">cw</span><span class="byte-idx">#${i}</span>`,
-          label: `<b>${fmtHex(b)}</b>`,
-          sub: topBits.join(' <span class="sep">|</span> '),
-        };
-      });
-      const cwTitle = el('div', { class: 'k', style: 'color:var(--muted);font-size:12px;margin-bottom:6px;' }, [
-        'Vista por codewords (lo que define la espec — 8 bits alineados):',
-      ]);
-      body.appendChild(cwTitle);
-      body.appendChild(renderByteRow(items));
-
-      // ---- Vista paralela POR CARÁCTER ----
-      // Cada carácter se ve como UNA SOLA caja de 8 bits (su byte original),
-      // anotando qué codewords cruza. Así queda claro que la H ocupa 8 bits,
-      // no 16: simplemente esos 8 bits se reparten entre dos codewords.
-      const charTitle = el('div', { class: 'k', style: 'color:var(--muted);font-size:12px;margin:18px 0 6px;' }, [
-        'Vista por carácter (lo que tú lees — cada letra son sus 8 bits propios):',
-      ]);
-      body.appendChild(charTitle);
-
-      // Una "caja" por cada parte del bitstream (modo, longitud, cada char,
-      // terminador, padding…) en el orden en que aparecen.
-      const partItems = result.bsParts.map((p) => {
-        const c = KIND_COLOR[p.kind] || '#888';
-        let topLabel;
-        if (p.kind === 'data') {
-          topLabel = `<span class="big-char">${escapeHtml(p.char)}</span><span class="byte-idx">byte ${p.byteIdx}</span>`;
-        } else if (p.kind === 'mode') {
-          topLabel = `<span class="big-char dim">modo</span><span class="byte-idx">${p.bits.length} bits</span>`;
-        } else if (p.kind === 'len') {
-          topLabel = `<span class="big-char dim">len</span><span class="byte-idx">${p.bits.length} bits</span>`;
-        } else if (p.kind === 'term') {
-          topLabel = `<span class="big-char dim">term</span><span class="byte-idx">${p.bits.length} bits</span>`;
-        } else if (p.kind === 'pad') {
-          topLabel = `<span class="big-char dim">pad</span><span class="byte-idx">${p.bits.length} bits</span>`;
-        } else {
-          topLabel = `<span class="big-char dim">padB</span><span class="byte-idx">8 bits</span>`;
-        }
-        return {
-          bits: p.bits,
-          color: c,
-          top: topLabel,
-          label: p.kind === 'data' ? `<b>${fmtHex(p.byteVal)}</b>` : '',
-          bitColors: p.bits.split('').map(() => c),
-        };
-      });
-      body.appendChild(renderByteRow(partItems));
-
-      // pequeño sumario explicativo del desplazamiento
-      const charGroups = QR.characterGroups(result);
-      if (charGroups.length > 0) {
-        const summary = el('div', { class: 'note', html:
-          `<b>Las dos vistas tienen los mismos bits</b>, sólo agrupados de forma distinta. ` +
-          `El primer carácter empieza en el bit <b>${4 + 8}</b> del flujo (tras 4 de modo + 8 de longitud), ` +
-          `por eso no encaja con la rejilla de codewords. Por ejemplo, '<b>${charGroups[0].char}</b>' = <code>${charGroups[0].byteVal.toString(2).padStart(8,'0')}</code> ` +
-          `son <b>8 bits</b>, pero los 4 altos viven en cw1 y los 4 bajos en cw2.`,
-        });
-        body.appendChild(summary);
-      }
-
-      // tabla resumen por codeword
-      const tab = el('table', { class: 'cw-table' });
-      const head = el('tr');
-      ['#','Hex','Bin','Contenido'].forEach((h) => head.appendChild(el('th', null, [h])));
-      tab.appendChild(head);
-      result.dataBytes.forEach((b, i) => {
-        const segs = cwSegs[i] || [];
-        const tr = el('tr');
-        tr.appendChild(el('td', null, [`cw${i}`]));
-        tr.appendChild(el('td', { class: 'mono' }, [fmtHex(b)]));
-        tr.appendChild(el('td', { class: 'mono' }, [fmtBin(b, 8)]));
-        const contentTd = el('td', { class: 'mono' });
-        segs.forEach((s, idx) => {
-          if (idx > 0) contentTd.appendChild(document.createTextNode(' | '));
-          const span = el('span');
-          span.style.color = KIND_COLOR[s.part.kind];
-          span.textContent = segmentLabel(s);
-          contentTd.appendChild(span);
-        });
-        tr.appendChild(contentTd);
-        tab.appendChild(tr);
-      });
-      body.appendChild(tab);
-    }
+    // ---------- PASO 3: agrupación en codewords (interactivo) ----------
+    renderInteractiveStep3(result);
 
     // ---------- PASO 4: ECC Reed-Solomon ----------
     {
@@ -813,6 +700,182 @@
 
       body.appendChild(el('div', { class: 'note', html:
         'Cuando hayas memorizado los buscadores y la máscara, mira el primer grupo (color rojo): los 8 módulos en zigzag desde la esquina inferior-derecha forman el primer byte. En modo byte ese primer byte combina el indicador de modo (0100) con los 4 bits altos de la longitud. Después vienen 4 bits bajos de longitud + 4 bits altos del primer carácter, etc.' }));
+    }
+  }
+
+  // -------------- PASO 3 interactivo: bitstream + codewords --------------
+  // Renderiza el bitstream completo (cada bit en su propia caja) y debajo
+  // los codewords (chunks de 8). Encima, chips para cada parte (H, O, L, A,
+  // modo, longitud…). Al pulsar un chip, los bits correspondientes se
+  // resaltan SIMULTÁNEAMENTE en ambas filas: así se ve que la H son 8 bits
+  // contiguos en el bitstream que caen partidos entre dos codewords.
+  function renderInteractiveStep3(result) {
+    const body = makeStep(
+      3,
+      'Agrupación en bytes (codewords) — vista interactiva',
+      'Abajo tienes el <b>flujo de bits completo</b> en una sola fila, y debajo el mismo flujo cortado en <b>codewords de 8 bits</b>. ' +
+      '<b>Pulsa un carácter</b> arriba (H, O, L, A…) y verás <i>los mismos 8 bits</i> resaltados en las dos filas. ' +
+      'Así comprueba: la H <b>es 8 bits</b> en el flujo, pero al cortar cada 8 bits desde el inicio, esos 8 bits caen partidos entre dos codewords (porque antes hay un prefijo de 12 bits).'
+    );
+
+    // Calcular, para cada parte del bitstream, su rango global [start, end)
+    const parts = result.bsParts;
+    const partRanges = [];
+    let off = 0;
+    for (const p of parts) {
+      partRanges.push({ part: p, start: off, end: off + p.bits.length });
+      off += p.bits.length;
+    }
+    const totalBits = off;
+    const allBits = parts.map((p) => p.bits).join('');
+
+    // ---- chips ----
+    const controls = el('div', { class: 'finder-controls' });
+    body.appendChild(controls);
+
+    // ---- fila 1: bitstream completo, bit a bit ----
+    const bsTitle = el('div', { class: 'k', style: 'color:var(--muted);font-size:12px;margin:8px 0 4px;' }, [
+      'Bitstream completo (cada bit es uno):',
+    ]);
+    body.appendChild(bsTitle);
+    const bsRow = el('div', { class: 'bitstream-interactive' });
+    body.appendChild(bsRow);
+    for (let i = 0; i < totalBits; i++) {
+      const bit = allBits[i];
+      const span = el('span', { class: 'bs-bit ' + (bit === '1' ? 'b1' : 'b0'), 'data-bit-idx': String(i) });
+      span.textContent = bit;
+      // color según origen (subrayado)
+      const range = partRanges.find((pr) => i >= pr.start && i < pr.end);
+      if (range) {
+        const c = KIND_COLOR[range.part.kind] || '#888';
+        span.style.borderBottomColor = c;
+      }
+      bsRow.appendChild(span);
+    }
+
+    // ---- fila 2: codewords (chunks de 8), también con data-bit-idx ----
+    const cwTitle = el('div', { class: 'k', style: 'color:var(--muted);font-size:12px;margin:14px 0 4px;' }, [
+      'Codewords (mismos bits, cortados cada 8):',
+    ]);
+    body.appendChild(cwTitle);
+    const cwRow = el('div', { class: 'bs-cw-row' });
+    body.appendChild(cwRow);
+    const numCw = Math.ceil(totalBits / 8);
+    for (let cw = 0; cw < numCw; cw++) {
+      const chunk = el('div', { class: 'bs-cw-chunk' });
+      chunk.style.borderColor = colorFor(cw);
+      const lbl = el('div', { class: 'chunk-label' }, [`cw#${cw}`]);
+      chunk.appendChild(lbl);
+      const chunkBits = el('div', { class: 'chunk-bits' });
+      for (let j = 0; j < 8; j++) {
+        const globalBit = cw * 8 + j;
+        if (globalBit >= totalBits) break;
+        const bit = allBits[globalBit];
+        const span = el('span', { class: 'bs-bit ' + (bit === '1' ? 'b1' : 'b0'), 'data-bit-idx': String(globalBit) });
+        span.textContent = bit;
+        const range = partRanges.find((pr) => globalBit >= pr.start && globalBit < pr.end);
+        if (range) {
+          const c = KIND_COLOR[range.part.kind] || '#888';
+          span.style.borderBottomColor = c;
+        }
+        chunkBits.appendChild(span);
+      }
+      // valor hex del codeword
+      let val = 0;
+      for (let j = 0; j < 8 && cw * 8 + j < totalBits; j++) {
+        val = (val << 1) | (allBits[cw * 8 + j] === '1' ? 1 : 0);
+      }
+      const hex = el('div', { class: 'chunk-label' }, [fmtHex(val)]);
+      chunk.appendChild(chunkBits);
+      chunk.appendChild(hex);
+      cwRow.appendChild(chunk);
+    }
+
+    // ---- info box ----
+    const infoBox = el('div', { class: 'finder-info' });
+    body.appendChild(infoBox);
+
+    // ---- highlighting ----
+    function clearHighlights() {
+      body.querySelectorAll('.bs-bit.highlight').forEach((n) => n.classList.remove('highlight'));
+    }
+    function highlightRange(start, end) {
+      clearHighlights();
+      for (let i = start; i < end; i++) {
+        body.querySelectorAll(`.bs-bit[data-bit-idx="${i}"]`).forEach((n) => n.classList.add('highlight'));
+      }
+    }
+    function showInfo(part, start, end) {
+      while (infoBox.firstChild) infoBox.removeChild(infoBox.firstChild);
+      const p1 = el('div', { class: 'pill' });
+      let label;
+      if (part.kind === 'data') label = `Carácter <b>'${escapeHtml(part.char)}'</b> = <code>${part.bits}</code> = <b>${fmtHex(part.byteVal)}</b>`;
+      else if (part.kind === 'mode') label = `<b>Modo byte</b> = <code>0100</code> (4 bits)`;
+      else if (part.kind === 'len') label = `<b>Longitud</b> = ${result.bytes.length} (8 bits)`;
+      else if (part.kind === 'term') label = `<b>Terminador</b> = <code>${part.bits}</code> (${part.bits.length} bits)`;
+      else if (part.kind === 'pad') label = `<b>Pad bit</b> = <code>${part.bits}</code> (alinea a byte)`;
+      else label = `<b>${escapeHtml(part.label)}</b>`;
+      p1.innerHTML = label;
+      infoBox.appendChild(p1);
+
+      const p2 = el('div', { class: 'pill' });
+      p2.innerHTML = `Bits del flujo: <b>${start}..${end - 1}</b> (${end - start} bits)`;
+      infoBox.appendChild(p2);
+
+      // Codewords que cruza
+      const cwsCrossed = new Set();
+      for (let i = start; i < end; i++) cwsCrossed.add(Math.floor(i / 8));
+      const arr = [...cwsCrossed].sort((a, b) => a - b);
+      const p3 = el('div', { class: 'pill' });
+      if (arr.length === 1) {
+        p3.innerHTML = `Está completo dentro de <b>cw${arr[0]}</b>`;
+      } else {
+        const counts = arr.map((c) => {
+          let n = 0;
+          for (let i = start; i < end; i++) if (Math.floor(i / 8) === c) n++;
+          return `<b>cw${c}</b> (${n} bits)`;
+        });
+        p3.innerHTML = `Cruza: ${counts.join(' + ')}`;
+      }
+      infoBox.appendChild(p3);
+    }
+
+    // construir un chip por cada parte del bitstream
+    parts.forEach((p, idx) => {
+      const range = partRanges[idx];
+      const chip = el('button', { class: 'finder-chip', type: 'button' });
+      const sw = el('span', { class: 'chip-swatch' });
+      sw.style.background = KIND_COLOR[p.kind] || '#888';
+      chip.appendChild(sw);
+      let text;
+      if (p.kind === 'data') text = p.char;
+      else if (p.kind === 'mode') text = 'modo';
+      else if (p.kind === 'len') text = 'len';
+      else if (p.kind === 'term') text = 'term';
+      else if (p.kind === 'pad') text = 'pad';
+      else text = (p.label || 'pad').replace('Pad ', '');
+      chip.appendChild(el('span', { class: 'chip-char' }, [text]));
+      chip.appendChild(el('span', { style: 'font-size:11px;color:var(--muted);' }, [`${p.bits.length}b`]));
+      chip.addEventListener('click', () => {
+        controls.querySelectorAll('.finder-chip').forEach((c) => c.classList.remove('active'));
+        chip.classList.add('active');
+        highlightRange(range.start, range.end);
+        showInfo(p, range.start, range.end);
+      });
+      controls.appendChild(chip);
+    });
+
+    // selección inicial: el primer carácter
+    const firstDataIdx = parts.findIndex((p) => p.kind === 'data');
+    if (firstDataIdx >= 0) {
+      const chips = controls.querySelectorAll('.finder-chip');
+      const targetChip = chips[firstDataIdx];
+      if (targetChip) {
+        targetChip.classList.add('active');
+        const r = partRanges[firstDataIdx];
+        highlightRange(r.start, r.end);
+        showInfo(parts[firstDataIdx], r.start, r.end);
+      }
     }
   }
 

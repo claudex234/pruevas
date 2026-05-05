@@ -193,3 +193,49 @@ table.matrix-meta td { padding: 2px 8px; }
 }
 .finder-info .bitlist .b.b1 { background: #fff; color: #04212d; }
 .finder-info .bitlist .b.b0 { background: rgba(255,255,255,0.1); color: #c4cad6; }
+
+/* Vista interactiva del bitstream: cada bit en su propia caja con
+   atributo data-bit-idx para resaltar al pulsar un chip. */
+.bitstream-interactive {
+  display: flex; flex-wrap: wrap; gap: 2px 4px;
+  font-family: ui-monospace, monospace; font-size: 13px;
+  padding: 12px 0;
+}
+.bs-bit {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 22px;
+  border-radius: 3px; padding: 0;
+  background: rgba(255,255,255,0.06);
+  color: #c4cad6;
+  border-bottom: 3px solid transparent;
+  position: relative;
+  transition: transform 0.06s ease, box-shadow 0.12s ease;
+}
+.bs-bit.b1 { background: rgba(255,255,255,0.85); color: #04212d; }
+.bs-bit.highlight {
+  outline: 3px solid #ffd166;
+  outline-offset: 1px;
+  z-index: 1;
+  transform: scale(1.08);
+  box-shadow: 0 0 12px rgba(255, 209, 102, 0.7);
+}
+.bs-cw-sep {
+  display: inline-block; width: 4px;
+  border-right: 2px dashed rgba(255,255,255,0.18);
+  align-self: stretch;
+}
+.bs-cw-row {
+  display: flex; flex-wrap: wrap; gap: 4px 8px;
+  font-family: ui-monospace, monospace; font-size: 13px;
+  padding: 12px 0;
+}
+.bs-cw-chunk {
+  display: inline-flex; flex-direction: column; align-items: center; gap: 2px;
+  border: 1px solid var(--grid); border-radius: 6px;
+  padding: 4px 6px;
+  background: rgba(255,255,255,0.03);
+}
+.bs-cw-chunk .chunk-label {
+  font-size: 10px; color: var(--muted); font-family: ui-monospace, monospace;
+}
+.bs-cw-chunk .chunk-bits { display: inline-flex; gap: 1px; }
