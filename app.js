@@ -606,6 +606,9 @@
         'Truco para leer a simple vista: localiza los buscadores (esquinas), ignora la columna y fila de tiempo, y ve siguiendo el zigzag desde la esquina inferior-derecha. Cada 8 módulos consecutivos en ese recorrido es un byte. <b>Recuerda:</b> los caracteres están desplazados 12 bits (4 modo + 8 longitud), por eso un carácter ocupa la mitad baja de un codeword y la mitad alta del siguiente.' }));
     }
 
+    // ---------- PASO 7B: ENCUENTRA LA LETRA (interactivo, sin máscara) ----------
+    renderFinderStep(result);
+
     // ---------- PASO 8: las 8 máscaras ----------
     {
       const body = makeStep(
@@ -760,6 +763,211 @@
 
       body.appendChild(el('div', { class: 'note', html:
         'Cuando hayas memorizado los buscadores y la máscara, mira el primer grupo (color rojo): los 8 módulos en zigzag desde la esquina inferior-derecha forman el primer byte. En modo byte ese primer byte combina el indicador de modo (0100) con los 4 bits altos de la longitud. Después vienen 4 bits bajos de longitud + 4 bits altos del primer carácter, etc.' }));
+    }
+  }
+
+  // -------------- PASO interactivo: ENCUENTRA LA LETRA --------------
+  // Muestra el QR sin máscara y permite elegir un grupo (carácter, modo,
+  // longitud, padding, ECC...) para verlo resaltado: 8 módulos exactos.
+  function renderFinderStep(result) {
+    const body = makeStep(
+      '★',
+      'Encuentra la letra (vista interactiva, sin máscara)',
+      'Aquí ves el QR <b>antes de aplicar la máscara</b> (se ven los datos puros). Pulsa una letra (u otro grupo) y se resaltarán <b>exactamente sus 8 módulos físicos</b> en la matriz. Es la forma más clara de localizar dónde vive cada carácter.'
+    );
+
+    const grid = result.placedMatrix.m;
+    const N = result.placedMatrix.N;
+    const path = result.dataPath;
+    const totalDataBytes = result.dataBytes.length;
+    const charGroups = QR.characterGroups(result);
+    const origins = QR.bitOrigins(result);
+
+    // Construimos la lista de grupos seleccionables:
+    //   - cada carácter (8 bits propios)
+    //   - el modo (4 bits)
+    //   - la longitud (8 bits)
+    //   - terminador, padding (un grupo agregado por tipo)
+    //   - cada bloque de ECC (un grupo por bloque)
+    const selectable = [];
+    // 1) caracteres
+    charGroups.forEach((cg) => {
+      const ch = cg.char === '·' ? `0x${cg.byteVal.toString(16).toUpperCase().padStart(2,'0')}` : cg.char;
+      selectable.push({
+        id: 'char-' + cg.byteIdx,
+        label: ch,
+        sub: `byte ${cg.byteIdx}`,
+        kind: 'data',
+        color: colorFor(cg.byteIdx),
+        cells: cg.cells,
+        bitPositions: cg.bitPositions,
+        bitsBin: cg.byteVal.toString(2).padStart(8, '0'),
+        hex: '0x' + cg.byteVal.toString(16).toUpperCase().padStart(2, '0'),
+        size: 8,
+        info: `Carácter <b>${escapeHtml(ch)}</b> · 8 bits propios (offset 12 + ${cg.byteIdx} × 8 desde el inicio del bitstream).`,
+      });
+    });
+    // 2) agrupar por kind no-data
+    const byKind = new Map();
+    origins.forEach((o, i) => {
+      if (o.kind === 'data') return;
+      let key = o.kind;
+      if (o.kind === 'ecc') key = 'ecc-block-' + (o.block != null ? o.block : 0);
+      if (o.kind === 'padbyte') key = 'padbyte-' + (o.part ? o.part.label : '');
+      let g = byKind.get(key);
+      if (!g) {
+        g = {
+          id: 'meta-' + key,
+          kind: o.kind,
+          part: o.part,
+          block: o.block,
+          cells: [],
+          bitPositions: [],
+        };
+        byKind.set(key, g);
+      }
+      g.cells.push(path[i]);
+      g.bitPositions.push(i);
+    });
+    const KIND_LABEL = {
+      mode: 'modo (4 bits)',
+      len: 'longitud (8 bits)',
+      term: 'terminador',
+      pad: 'pad (rellenar a byte)',
+      padbyte: 'pad byte',
+      remainder: 'bits extra (remainder)',
+    };
+    const KIND_BG = {
+      mode: '#62d0ff', len: '#ffd166', term: '#a5a5a5',
+      pad: '#777', padbyte: '#cf83ff', ecc: '#ff7ab6', remainder: '#666',
+    };
+    byKind.forEach((g) => {
+      let label = KIND_LABEL[g.kind] || g.kind;
+      let info = '';
+      if (g.kind === 'mode') info = '<b>Modo byte</b> = bits <code>0100</code>. Indica que vienen bytes de 8 bits.';
+      else if (g.kind === 'len') info = `<b>Longitud</b> = ${result.bytes.length} bytes (8 bits).`;
+      else if (g.kind === 'ecc') { label = `ECC bloque ${g.block + 1}`; info = `Codewords de Reed-Solomon del bloque ${g.block + 1}.`; }
+      else if (g.kind === 'padbyte') { label = (g.part && g.part.label) || 'pad byte'; info = 'Bytes de relleno alternando 0xEC / 0x11.'; }
+      else if (g.kind === 'pad') info = 'Ceros para alinear a byte tras el terminador.';
+      else if (g.kind === 'term') info = 'Hasta 4 ceros que marcan el final de los datos útiles.';
+      else if (g.kind === 'remainder') info = 'Bits extra que sobran tras escribir todos los codewords (ignorados al leer).';
+      selectable.push({
+        id: g.id,
+        label,
+        sub: `${g.cells.length} módulos`,
+        kind: g.kind,
+        color: KIND_BG[g.kind] || '#888',
+        cells: g.cells,
+        bitPositions: g.bitPositions,
+        bitsBin: null,
+        size: g.cells.length,
+        info,
+      });
+    });
+
+    // ---- UI ----
+    const controls = el('div', { class: 'finder-controls' });
+    body.appendChild(controls);
+
+    const matrixCard = el('div', { class: 'qr-card', style: 'max-width:760px;margin:0 auto;' });
+    body.appendChild(matrixCard);
+
+    const infoBox = el('div', { class: 'finder-info' });
+    body.appendChild(infoBox);
+
+    let currentId = selectable.length > 0 ? selectable[0].id : null;
+
+    function renderMatrixWith(selectedId) {
+      const sel = selectable.find((s) => s.id === selectedId);
+      const overlays = [];
+      const outlines = [];
+      const labels = [];
+
+      // 1) atenuar TODOS los módulos de datos para que destaque el seleccionado
+      for (const [r, c] of path) {
+        overlays.push({ r, c, color: '#ffffff', opacity: 0.0 }); // no-op pero deja sitio si quisiéramos atenuar
+      }
+
+      if (sel) {
+        // resaltar las celdas del grupo elegido en color fuerte
+        for (let i = 0; i < sel.cells.length; i++) {
+          const [r, c] = sel.cells[i];
+          overlays.push({ r, c, color: sel.color, opacity: 0.85 });
+        }
+        outlines.push({ cells: sel.cells, color: sel.color });
+        // etiqueta del grupo en su 1.ª celda
+        if (sel.cells.length) {
+          const [r0, c0] = sel.cells[0];
+          labels.push({ r: r0, c: c0, text: sel.label.length <= 2 ? sel.label : '★', color: '#04212d' });
+        }
+        // numerar cada bit (0..n-1) sobre cada celda del grupo
+        for (let i = 1; i < sel.cells.length; i++) {
+          const [r, c] = sel.cells[i];
+          labels.push({ r, c, text: String(i), color: '#04212d' });
+        }
+      }
+
+      // re-render
+      while (matrixCard.firstChild) matrixCard.removeChild(matrixCard.firstChild);
+      const svg = renderMatrix(grid, N, {
+        cell: 22,
+        cellOverlay: overlays,
+        groupOutlines: outlines,
+        groupOutlinesStyle: { inset: 1, width: 3, opacity: 1 },
+        groupLabels: labels,
+      });
+      matrixCard.appendChild(svg);
+      const cap = el('div', { class: 'caption' });
+      cap.innerHTML = sel
+        ? `Resaltado: <b>${escapeHtml(sel.label)}</b> · ${sel.size} módulos · QR <i>sin máscara</i>`
+        : 'Selecciona un grupo arriba';
+      matrixCard.appendChild(cap);
+
+      // panel inferior con bits + posición
+      while (infoBox.firstChild) infoBox.removeChild(infoBox.firstChild);
+      if (sel) {
+        const pill1 = el('div', { class: 'pill' });
+        pill1.innerHTML = sel.info || sel.label;
+        infoBox.appendChild(pill1);
+        if (sel.bitsBin) {
+          const bits = el('div', { class: 'bitlist' });
+          for (let i = 0; i < sel.bitsBin.length; i++) {
+            const ch = sel.bitsBin[i];
+            bits.appendChild(el('span', { class: 'b ' + (ch === '1' ? 'b1' : 'b0') }, [ch]));
+          }
+          const wrap = el('div');
+          wrap.appendChild(document.createTextNode((sel.hex || '') + '  '));
+          wrap.appendChild(bits);
+          infoBox.appendChild(wrap);
+        }
+        const cellsTxt = sel.cells.map(([r, c]) => `(${r},${c})`).join(' · ');
+        infoBox.appendChild(el('div', { class: 'pill', style: 'font-size:11px;' }, [`módulos: ${cellsTxt}`]));
+      }
+    }
+
+    // construir chips
+    selectable.forEach((s) => {
+      const chip = el('button', { class: 'finder-chip', type: 'button' });
+      const sw = el('span', { class: 'chip-swatch' });
+      sw.style.background = s.color;
+      chip.appendChild(sw);
+      chip.appendChild(el('span', { class: 'chip-char' }, [s.label]));
+      if (s.sub) chip.appendChild(el('span', { style: 'font-size:11px;color:var(--muted);' }, [s.sub]));
+      chip.addEventListener('click', () => {
+        currentId = s.id;
+        // marca el activo
+        controls.querySelectorAll('.finder-chip').forEach((c) => c.classList.remove('active'));
+        chip.classList.add('active');
+        renderMatrixWith(currentId);
+      });
+      controls.appendChild(chip);
+    });
+
+    // selección inicial
+    if (currentId) {
+      const firstChip = controls.querySelector('.finder-chip');
+      if (firstChip) firstChip.classList.add('active');
+      renderMatrixWith(currentId);
     }
   }
 

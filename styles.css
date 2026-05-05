@@ -153,3 +153,43 @@ table.matrix-meta { font-size: 12px; color: var(--muted); }
 table.matrix-meta td { padding: 2px 8px; }
 
 .error { background: rgba(251, 113, 133, 0.1); border: 1px solid var(--warn); color: #ffd0d6; padding: 10px 12px; border-radius: 8px; }
+
+/* Selector interactivo de letra/grupo */
+.finder-controls {
+  display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; align-items: center;
+}
+.finder-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 10px; border-radius: 999px;
+  background: var(--panel-2); border: 1px solid var(--grid); color: var(--text);
+  font-family: ui-monospace, monospace; font-size: 13px; cursor: pointer;
+  transition: transform 0.06s ease, box-shadow 0.12s ease;
+}
+.finder-chip:hover { transform: translateY(-1px); }
+.finder-chip.active {
+  background: var(--accent); color: #04212d; border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(98,208,255,0.25);
+}
+.finder-chip .chip-swatch {
+  display: inline-block; width: 12px; height: 12px; border-radius: 3px;
+  border: 1px solid rgba(0,0,0,0.25);
+}
+.finder-chip .chip-char {
+  font-weight: 700; font-size: 14px; min-width: 14px; text-align: center;
+}
+.finder-info {
+  display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: center;
+  background: var(--panel-2); border: 1px solid var(--grid);
+  border-radius: 8px; padding: 10px 14px; margin-top: 12px;
+  font-family: ui-monospace, monospace; font-size: 13px;
+}
+.finder-info .pill {
+  background: rgba(255,255,255,0.05); padding: 2px 8px; border-radius: 4px;
+}
+.finder-info .bitlist { display: inline-flex; gap: 3px; }
+.finder-info .bitlist .b {
+  display: inline-block; width: 18px; text-align: center; padding: 2px 0;
+  border-radius: 3px; font-weight: 700;
+}
+.finder-info .bitlist .b.b1 { background: #fff; color: #04212d; }
+.finder-info .bitlist .b.b0 { background: rgba(255,255,255,0.1); color: #c4cad6; }
