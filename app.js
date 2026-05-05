@@ -335,26 +335,76 @@
       const cwSegs = QR.annotateCodewords(result.bsParts);
       const items = result.dataBytes.map((b, i) => {
         const segs = cwSegs[i] || [];
-        const segLabels = segs.map(segmentLabel);
         const topBits = [];
         for (const s of segs) {
           topBits.push(`<span style="color:${KIND_COLOR[s.part.kind]}">${segmentLabel(s)}</span>`);
         }
-        // carácter destacado: si en el codeword hay datos, mostramos el primero
-        const dataSeg = segs.find((s) => s.part.kind === 'data');
-        const bigChar = dataSeg
-          ? `<span class="big-char">${escapeHtml(dataSeg.part.char)}</span>`
-          : (segs[0] ? `<span class="big-char dim">${KIND_NAME[segs[0].part.kind] || ''}</span>` : '');
+        // YA NO mostramos un único carácter "grande" sobre el codeword:
+        // era engañoso, hacía pensar que esa letra ocupaba el codeword
+        // entero cuando en realidad sólo aporta 4 bits.
         return {
           bits: fmtBin(b, 8),
           color: colorFor(i),
           bitColors: segmentBitColors(segs),
-          top: `${bigChar}<span class="byte-idx">cw#${i}</span>`,
+          top: `<span class="big-char dim">cw</span><span class="byte-idx">#${i}</span>`,
           label: `<b>${fmtHex(b)}</b>`,
           sub: topBits.join(' <span class="sep">|</span> '),
         };
       });
+      const cwTitle = el('div', { class: 'k', style: 'color:var(--muted);font-size:12px;margin-bottom:6px;' }, [
+        'Vista por codewords (lo que define la espec — 8 bits alineados):',
+      ]);
+      body.appendChild(cwTitle);
       body.appendChild(renderByteRow(items));
+
+      // ---- Vista paralela POR CARÁCTER ----
+      // Cada carácter se ve como UNA SOLA caja de 8 bits (su byte original),
+      // anotando qué codewords cruza. Así queda claro que la H ocupa 8 bits,
+      // no 16: simplemente esos 8 bits se reparten entre dos codewords.
+      const charTitle = el('div', { class: 'k', style: 'color:var(--muted);font-size:12px;margin:18px 0 6px;' }, [
+        'Vista por carácter (lo que tú lees — cada letra son sus 8 bits propios):',
+      ]);
+      body.appendChild(charTitle);
+
+      // Una "caja" por cada parte del bitstream (modo, longitud, cada char,
+      // terminador, padding…) en el orden en que aparecen.
+      const partItems = result.bsParts.map((p) => {
+        const c = KIND_COLOR[p.kind] || '#888';
+        let topLabel;
+        if (p.kind === 'data') {
+          topLabel = `<span class="big-char">${escapeHtml(p.char)}</span><span class="byte-idx">byte ${p.byteIdx}</span>`;
+        } else if (p.kind === 'mode') {
+          topLabel = `<span class="big-char dim">modo</span><span class="byte-idx">${p.bits.length} bits</span>`;
+        } else if (p.kind === 'len') {
+          topLabel = `<span class="big-char dim">len</span><span class="byte-idx">${p.bits.length} bits</span>`;
+        } else if (p.kind === 'term') {
+          topLabel = `<span class="big-char dim">term</span><span class="byte-idx">${p.bits.length} bits</span>`;
+        } else if (p.kind === 'pad') {
+          topLabel = `<span class="big-char dim">pad</span><span class="byte-idx">${p.bits.length} bits</span>`;
+        } else {
+          topLabel = `<span class="big-char dim">padB</span><span class="byte-idx">8 bits</span>`;
+        }
+        return {
+          bits: p.bits,
+          color: c,
+          top: topLabel,
+          label: p.kind === 'data' ? `<b>${fmtHex(p.byteVal)}</b>` : '',
+          bitColors: p.bits.split('').map(() => c),
+        };
+      });
+      body.appendChild(renderByteRow(partItems));
+
+      // pequeño sumario explicativo del desplazamiento
+      const charGroups = QR.characterGroups(result);
+      if (charGroups.length > 0) {
+        const summary = el('div', { class: 'note', html:
+          `<b>Las dos vistas tienen los mismos bits</b>, sólo agrupados de forma distinta. ` +
+          `El primer carácter empieza en el bit <b>${4 + 8}</b> del flujo (tras 4 de modo + 8 de longitud), ` +
+          `por eso no encaja con la rejilla de codewords. Por ejemplo, '<b>${charGroups[0].char}</b>' = <code>${charGroups[0].byteVal.toString(2).padStart(8,'0')}</code> ` +
+          `son <b>8 bits</b>, pero los 4 altos viven en cw1 y los 4 bajos en cw2.`,
+        });
+        body.appendChild(summary);
+      }
 
       // tabla resumen por codeword
       const tab = el('table', { class: 'cw-table' });
