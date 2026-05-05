@@ -127,6 +127,55 @@
     return out;
   }
 
+  // Construye overlays/contornos/etiquetas para superponer todos los
+  // caracteres + (opcional) los bloques ECC sobre cualquier matriz QR
+  // de este result. Devuelve algo que se pasa directo a renderMatrix.
+  function charOverlaysFor(result, opts) {
+    opts = opts || {};
+    const labelChars = opts.chars !== false;
+    const labelEcc = opts.ecc === true;
+    const overlays = [];
+    const outlines = [];
+    const labels = [];
+
+    if (labelChars) {
+      const charGroups = QR.characterGroups(result);
+      charGroups.forEach((cg) => {
+        const color = colorFor(cg.byteIdx);
+        outlines.push({ cells: cg.cells, color });
+        if (cg.cells.length) {
+          for (const [r, c] of cg.cells) overlays.push({ r, c, color, opacity: 0.30 });
+          const display = cg.char === '·' ? `0x${cg.byteVal.toString(16).toUpperCase().padStart(2, '0')}` : cg.char;
+          labels.push({ r: cg.cells[0][0], c: cg.cells[0][1], text: display, color: '#04212d' });
+        }
+      });
+    }
+
+    if (labelEcc) {
+      // Localizar las celdas de cada bloque ECC siguiendo la path con la
+      // misma lógica de bitOrigins.
+      const origins = QR.bitOrigins(result);
+      const path = result.dataPath;
+      const eccByBlock = new Map();
+      origins.forEach((o, i) => {
+        if (o.kind !== 'ecc') return;
+        const key = o.block;
+        if (!eccByBlock.has(key)) eccByBlock.set(key, []);
+        eccByBlock.get(key).push(path[i]);
+      });
+      const eccColor = '#ff7ab6';
+      eccByBlock.forEach((cells, blockIdx) => {
+        outlines.push({ cells, color: eccColor });
+        for (const [r, c] of cells) overlays.push({ r, c, color: eccColor, opacity: 0.20 });
+        if (cells.length) {
+          labels.push({ r: cells[0][0], c: cells[0][1], text: 'ECC', color: '#fff' });
+        }
+      });
+    }
+
+    return { overlays, outlines, labels };
+  }
+
   // ---- Render: matriz QR como SVG ----
   function renderMatrix(grid, N, opts) {
     opts = opts || {};
@@ -551,16 +600,62 @@
       const body = makeStep(
         8,
         'Aplicación de máscara — comparación de las 8 opciones',
-        'Para que el patrón no engañe al lector (zonas demasiado uniformes, falsos buscadores, etc.) se aplica una de 8 máscaras XOR. Se elige la de menor penalización. Aquí ves todas, con su puntuación.'
+        'Para que el patrón no engañe al lector (zonas demasiado uniformes, falsos buscadores, etc.) se aplica una de 8 máscaras XOR. Se elige la de menor penalización. ' +
+        '<b>Importante:</b> la máscara <i>no mueve los datos de sitio</i>, sólo invierte (XOR) ciertos módulos. Por eso los caracteres H, O, L, A siguen viviendo en exactamente las mismas celdas físicas, sólo que algunos bits se ven invertidos.'
       );
+      // Overlay de caracteres compartido en todas las máscaras
+      const charOv = charOverlaysFor(result, { chars: true, ecc: false });
       const grid = el('div', { class: 'qr-grid' });
       result.masks.forEach((m) => {
-        const svg = renderMatrix(m.grid, result.placedMatrix.N, { cell: 8 });
+        const svg = renderMatrix(m.grid, result.placedMatrix.N, {
+          cell: 9,
+          cellOverlay: charOv.overlays,
+          groupOutlines: charOv.outlines,
+          groupOutlinesStyle: { inset: 1, width: 1.5 },
+          groupLabels: charOv.labels,
+        });
         grid.appendChild(qrCard(svg, `Máscara ${m.index} · pen ${m.score}`, m.index === result.chosen.index));
       });
       body.appendChild(grid);
       body.appendChild(el('div', { class: 'note', html:
-        `Máscara seleccionada: <b>${result.chosen.index}</b> (penalización ${result.chosen.score}).` }));
+        `Máscara seleccionada: <b>${result.chosen.index}</b> (penalización ${result.chosen.score}). Mira cómo H/O/L/A están en el mismo sitio en las 8 versiones — sólo cambian qué bits aparecen en negro o blanco.` }));
+    }
+
+    // ---------- PASO 8B: ANTES vs DESPUÉS de la máscara ----------
+    {
+      const body = makeStep(
+        '8B',
+        'Antes vs después de la máscara — los caracteres no se mueven',
+        'A la izquierda, el QR <b>sin máscara</b> (datos puros). A la derecha, con la máscara aplicada. Los recuadros de H, O, L, A están <b>en las mismas celdas físicas</b> en ambos: lo único que cambia es que la máscara invierte (XOR) algunos bits para evitar patrones engañosos.'
+      );
+      const charOv = charOverlaysFor(result, { chars: true, ecc: true });
+      const N = result.placedMatrix.N;
+      const cards = el('div', { class: 'qr-grid' });
+      const svgPre = renderMatrix(result.placedMatrix.m, N, {
+        cell: 16,
+        cellOverlay: charOv.overlays,
+        groupOutlines: charOv.outlines,
+        groupOutlinesStyle: { inset: 1, width: 2 },
+        groupLabels: charOv.labels,
+      });
+      cards.appendChild(qrCard(svgPre, 'Antes (sin máscara) — H/O/L/A visibles', false));
+      const svgPost = renderMatrix(result.chosen.grid, N, {
+        cell: 16,
+        cellOverlay: charOv.overlays,
+        groupOutlines: charOv.outlines,
+        groupOutlinesStyle: { inset: 1, width: 2 },
+        groupLabels: charOv.labels,
+      });
+      cards.appendChild(qrCard(svgPost, `Después (máscara ${result.chosen.index}) — mismas celdas, bits XOR`, true));
+      body.appendChild(cards);
+
+      // Nota sobre ECC = paridad, no copias
+      body.appendChild(el('div', { class: 'note', html:
+        '<b>Sobre los "duplicados":</b> en QR <i>no se duplican</i> los caracteres. La redundancia viene de <b>Reed-Solomon</b>: a partir de los bytes de datos se calculan ' +
+        `<b>${result.cfg.ec}</b> bytes de <i>paridad</i> por bloque (los recuadros rosas etiquetados <b>ECC</b>). ` +
+        'Esos bytes ECC <b>no contienen copias literales</b> de la H/O/L/A — son el resultado de operaciones en GF(256) sobre los datos. ' +
+        'Si el lector pierde algunos módulos (datos o ECC), Reed-Solomon es capaz de reconstruir los datos originales gracias a esa paridad. ' +
+        `En este QR v${result.version}-${result.ecc}: ${result.dataBytes.length} bytes de datos + ${result.finalCw.length - result.dataBytes.length} bytes ECC.` }));
     }
 
     // ---------- PASO 9: Información de formato ----------
