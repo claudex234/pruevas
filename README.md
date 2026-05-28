@@ -8,7 +8,7 @@ sobre el mismo mapa SVG.
 
 A diferencia de una página estática, los **datos** no viajan dentro del HTML:
 
-- `index.php` — solo la interfaz (HTML/CSS) y el motor de dibujo SVG.
+- `visor.php` — solo la interfaz (HTML/CSS) y el motor de dibujo SVG.
 - `api.php` — entrega los datos en JSON a través de `?r=dep|prov|dist|museos`.
 - `data/` — archivos fuente (GeoJSON de límites y `museos.json`).
   Está **bloqueado al acceso directo** por `data/.htaccess`, así que solo se
@@ -26,9 +26,9 @@ Lima, recortados). No depende de ningún sitio externo.
 
 ## Despliegue
 
-1. Sube **todos** los archivos (`index.php`, `api.php`, `.htaccess`, la carpeta
+1. Sube **todos** los archivos (`visor.php`, `api.php`, `.htaccess`, la carpeta
    `data/` con su `.htaccess`) a tu hosting con **PHP** (cualquier versión 7+).
-2. Abre la URL: se sirve `index.php` automáticamente.
+2. Abre la URL: se sirve `visor.php` automáticamente.
 
 Requisitos: PHP y, para bloquear `data/`, un servidor **Apache** (lee
 `.htaccess`). En **nginx** hay que añadir una regla equivalente, por ejemplo:

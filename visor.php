@@ -222,6 +222,17 @@ header('Cache-Control: no-store, no-cache, must-revalidate');
     }
     .toast.show { opacity: 1; }
 
+    /* Cartel de estado / errores sobre el mapa */
+    .status {
+      position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+      background: rgba(15,23,34,.95); border: 1px solid var(--border);
+      color: var(--text); padding: 16px 20px; border-radius: 12px;
+      font-size: 14px; line-height: 1.5; max-width: 80%; text-align: center; z-index: 900;
+    }
+    .status.err { border-color: var(--accent); }
+    .status code { color: var(--accent-2); font-size: 12.5px; word-break: break-all; }
+    .status.hide { display: none; }
+
     /* ---------- Celular: mapa a pantalla completa + hoja inferior ---------- */
     @media (max-width: 760px) {
       body { flex-direction: column; }
@@ -290,6 +301,7 @@ header('Cache-Control: no-store, no-cache, must-revalidate');
     <svg id="pmap" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg"></svg>
     <div class="maplabel" id="maplabel"></div>
     <div class="legend" id="legend"></div>
+    <div class="status" id="status">Cargando mapa…</div>
   </div>
   <div class="toast" id="toast"></div>
 
@@ -760,29 +772,48 @@ header('Cache-Control: no-store, no-cache, must-revalidate');
         `<div class="row"><span class="sw" style="background:${v}"></span>${k}</div>`).join("");
 
     /* ---------- Carga (desde el servidor, sin dependencias externas) ---------- */
-    const getJSON = r => fetch(`${API}?r=${r}`).then(res => {
+    const statusEl = document.getElementById("status");
+    function setStatus(html, isErr) {
+      statusEl.innerHTML = html;
+      statusEl.classList.toggle("err", !!isErr);
+      statusEl.classList.remove("hide");
+    }
+    function hideStatus() { statusEl.classList.add("hide"); }
+
+    // Versión anti-caché: cada carga pide datos frescos (evita copias viejas).
+    const V = Date.now();
+    const getJSON = r => fetch(`${API}?r=${r}&v=${V}`, { cache: "no-store" }).then(res => {
       if (!res.ok) throw new Error(`${r}: HTTP ${res.status}`);
       return res.json();
     });
 
     Promise.allSettled([getJSON("dep"), getJSON("prov"), getJSON("dist"), getJSON("museos")])
       .then(([dep, prov, dist, museos]) => {
-        if (dep.status !== "fulfilled") { showToast("No se pudo cargar el mapa del Perú."); return; }
+        if (dep.status !== "fulfilled") {
+          setStatus(`No se pudo cargar el mapa.<br><code>${dep.reason}</code><br><br>` +
+            `Prueba abrir <code>${API}?r=dep</code> directamente.`, true);
+          return;
+        }
         MUSEOS = (museos.status === "fulfilled" && Array.isArray(museos.value)) ? museos.value : [];
         MUSEOS.forEach(m => { if (!m.provincia) m.provincia = "LIMA"; });
 
-        depFeatures = dep.value.features;
-        provFeatures = (prov.status === "fulfilled")
-          ? prov.value.features.filter(f => norm(prop(f.properties, DEP_KEYS)) === "LIMA")
-          : [];
-        distFeatures = (dist.status === "fulfilled")
-          ? dist.value.features.filter(f => norm(prop(f.properties, DEP_KEYS)) === "LIMA")
-          : [];
-        if (!provFeatures.length) showToast("No se cargaron las provincias de Lima; el zoom por niveles no estará disponible.");
-
-        buildFilters();
-        buildMap();
-      });
+        try {
+          depFeatures = dep.value.features;
+          provFeatures = (prov.status === "fulfilled")
+            ? prov.value.features.filter(f => norm(prop(f.properties, DEP_KEYS)) === "LIMA")
+            : [];
+          distFeatures = (dist.status === "fulfilled")
+            ? dist.value.features.filter(f => norm(prop(f.properties, DEP_KEYS)) === "LIMA")
+            : [];
+          buildFilters();
+          buildMap();
+          hideStatus();
+          if (!provFeatures.length) showToast("No se cargaron las provincias de Lima; el zoom por niveles no estará disponible.");
+        } catch (e) {
+          setStatus(`Error al construir el mapa.<br><code>${e.message}</code>`, true);
+        }
+      })
+      .catch(e => setStatus(`Error inesperado.<br><code>${e.message}</code>`, true));
   </script>
 </body>
 </html>

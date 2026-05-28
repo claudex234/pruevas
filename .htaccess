@@ -1,5 +1,5 @@
-# El visor es index.php (asegura que se sirva antes que cualquier .html).
-DirectoryIndex index.php
+# El visor es visor.php (se sirve también al entrar al dominio raíz).
+DirectoryIndex visor.php index.php
 
 # Bloquea la descarga directa de los archivos de datos, estén en /data o
 # sueltos en la raíz. api.php sigue leyéndolos internamente con readfile().
