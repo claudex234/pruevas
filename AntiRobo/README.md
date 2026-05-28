@@ -14,6 +14,7 @@ desde tu chat autorizado. Nunca envía nada por su cuenta.
 | `/gps`  | Ubicación aproximada (por IP) + enlace a Google Maps |
 | `/ip`   | IP pública y proveedor de internet (ISP) |
 | `/info` | Nombre del equipo, usuario, SO, tiempo encendido, IPs locales |
+| `/matar` | Cierra la app (finaliza el proceso matame) |
 | `/help` | Lista los comandos |
 
 Funciona con o sin la barra (`/ip` o `ip`) y no distingue mayúsculas.

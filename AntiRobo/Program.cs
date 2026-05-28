@@ -29,6 +29,7 @@ var commands = new List<ICommand>
     new GpsCommand(location),
     new IpCommand(location),
     new InfoCommand(),
+    new KillCommand(),
 };
 commands.Add(new HelpCommand(commands.ToList())); // /help conoce al resto
 
