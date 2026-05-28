@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Mapa interactivo · Perú → Lima · Museos</title>
+  <title>Mapa interactivo · Perú → Lima → Distritos · Museos</title>
   <link
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -32,7 +32,6 @@
       overflow: hidden;
     }
 
-    /* Sidebar */
     #sidebar {
       width: 340px;
       min-width: 340px;
@@ -42,10 +41,7 @@
       flex-direction: column;
       height: 100%;
     }
-    #sidebar header {
-      padding: 18px 18px 14px;
-      border-bottom: 1px solid var(--border);
-    }
+    #sidebar header { padding: 18px 18px 14px; border-bottom: 1px solid var(--border); }
     #sidebar header h1 { margin: 0; font-size: 18px; letter-spacing: 0.3px; }
     #sidebar header p { margin: 6px 0 0; font-size: 12.5px; color: var(--muted); }
 
@@ -115,13 +111,7 @@
     }
     .card:hover { background: var(--panel-2); }
     .card.selected { background: var(--panel-2); border-color: var(--accent-2); }
-    .card h3 {
-      margin: 0 0 3px;
-      font-size: 14.5px;
-      display: flex;
-      align-items: center;
-      gap: 7px;
-    }
+    .card h3 { margin: 0 0 3px; font-size: 14.5px; display: flex; align-items: center; gap: 7px; }
     .card .tag {
       font-size: 10.5px;
       text-transform: uppercase;
@@ -140,27 +130,17 @@
     }
     footer a { color: var(--accent-2); text-decoration: none; }
 
-    /* Map */
     #map { flex: 1; height: 100%; background: #0b1118; }
 
-    /* Region labels on the Peru view */
-    .region-label {
-      background: rgba(226, 59, 59, 0.92);
+    .district-tip {
+      background: rgba(15,23,34,.92);
       color: #fff;
+      border: 1px solid var(--border);
       font-size: 12px;
       font-weight: 600;
-      padding: 4px 10px;
-      border-radius: 999px;
-      white-space: nowrap;
-      border: 1px solid #fff;
-      box-shadow: 0 2px 6px rgba(0,0,0,.45);
-      cursor: pointer;
+      padding: 3px 8px;
     }
-    .region-label.lima {
-      background: var(--accent-2);
-      color: #1a1200;
-      transform: scale(1.08);
-    }
+    .district-tip::before { display: none; }
 
     .leaflet-popup-content { font-size: 13px; line-height: 1.45; }
     .leaflet-popup-content h3 { margin: 0 0 4px; font-size: 15px; }
@@ -190,6 +170,8 @@
       opacity: 0;
       transition: opacity .25s;
       pointer-events: none;
+      max-width: 80%;
+      text-align: center;
     }
     .toast.show { opacity: 1; }
 
@@ -204,12 +186,12 @@
   <aside id="sidebar">
     <header>
       <h1 id="title">🇵🇪 Perú</h1>
-      <p id="subtitle">Haz clic en el mapa (o en Lima) para enfocar Lima</p>
+      <p id="subtitle">Haz clic sobre la figura de Lima en el mapa</p>
     </header>
-    <button class="backbtn" id="back">← Volver a Perú</button>
+    <button class="backbtn" id="back">← Volver</button>
     <div class="hint" id="hint">
-      Vista general del <b>Perú</b>. Verás las regiones principales (como <b>Lima</b>).<br><br>
-      👉 Haz <b>clic en el mapa</b> o sobre la etiqueta de <b>Lima</b> para hacer zoom y ver los museos.
+      Vista general del <b>Perú</b> con los departamentos dibujados.<br><br>
+      👉 Haz clic sobre la <b>figura de Lima</b> (resaltada) para ver sus <b>distritos</b>.
     </div>
     <div class="controls" id="controls">
       <input id="search" type="search" placeholder="Buscar museo..." autocomplete="off" />
@@ -218,7 +200,7 @@
     <div class="count" id="count"></div>
     <div id="list"></div>
     <footer>
-      Mapa © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> · estilo <a href="https://carto.com/" target="_blank" rel="noopener">CARTO</a>
+      Límites: <a href="https://github.com/juaneladio/peru-geojson" target="_blank" rel="noopener">peru-geojson</a> · Mapa © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OSM</a>/<a href="https://carto.com/" target="_blank" rel="noopener">CARTO</a>
     </footer>
   </aside>
   <div id="map"></div>
@@ -232,90 +214,65 @@
   <script>
     /* ---------- Datos ---------- */
     const PERU_VIEW = { center: [-9.8, -75.3], zoom: 5 };
-    const LIMA_VIEW = { center: [-12.05, -77.02], zoom: 11 };
 
-    // Regiones/departamentos para la vista de Perú (solo Lima tiene museos cargados).
-    const REGIONES = [
-      { nombre: "Lima", coords: [-12.05, -77.02], lima: true },
-      { nombre: "Cusco", coords: [-13.53, -71.97] },
-      { nombre: "Arequipa", coords: [-16.41, -71.54] },
-      { nombre: "La Libertad", coords: [-8.11, -79.03] },
-      { nombre: "Piura", coords: [-5.19, -80.63] },
-      { nombre: "Loreto", coords: [-3.75, -73.25] },
-      { nombre: "Puno", coords: [-15.84, -70.03] }
-    ];
+    // Fuente de límites geográficos (GeoJSON) — se cargan en el navegador.
+    const GEO_DEP  = "https://raw.githubusercontent.com/juaneladio/peru-geojson/master/peru_departamental_simple.geojson";
+    const GEO_DIST = "https://raw.githubusercontent.com/juaneladio/peru-geojson/master/peru_distrital_simple.geojson";
 
+    // Museos. 'nombdist' = nombre del distrito tal como aparece en el GeoJSON (NOMBDIST).
     const MUSEOS = [
-      { nombre: "Museo de Arte de Lima (MALI)", distrito: "Cercado de Lima", cat: "Arte", coords: [-12.0628, -77.0353], desc: "Principal museo de arte del país, con 3000 años de historia peruana en el Parque de la Exposición." },
-      { nombre: "Museo Nacional de Arqueología, Antropología e Historia", distrito: "Pueblo Libre", cat: "Historia", coords: [-12.0723, -77.0639], desc: "El museo estatal más antiguo del Perú (1822). Colecciones precolombinas y la Estela de Raimondi." },
-      { nombre: "Museo Larco", distrito: "Pueblo Libre", cat: "Arqueología", coords: [-12.0716, -77.0703], desc: "Casona virreinal con cerámica precolombina y la famosa sala de arte erótico mochica." },
-      { nombre: "Museo de la Nación", distrito: "San Borja", cat: "Historia", coords: [-12.0905, -76.9947], desc: "Gran recinto con muestras sobre culturas peruanas y el Lugar de la Memoria." },
-      { nombre: "Museo de Sitio Pachacamac", distrito: "Lurín", cat: "Arqueología", coords: [-12.2266, -76.8987], desc: "Santuario arqueológico prehispánico al sur de Lima, con templos y el Acllahuasi." },
-      { nombre: "Museo Pedro de Osma", distrito: "Barranco", cat: "Arte", coords: [-12.1556, -77.0214], desc: "Arte virreinal de la escuela cusqueña en una elegante mansión de Barranco." },
-      { nombre: "MATE - Museo Mario Testino", distrito: "Barranco", cat: "Arte", coords: [-12.1471, -77.0211], desc: "Fotografía contemporánea y la serie de retratos andinos 'Alta Moda'." },
-      { nombre: "Museo Andrés del Castillo", distrito: "Cercado de Lima", cat: "Arqueología", coords: [-12.0476, -77.0331], desc: "Minerales, cerámica Nasca y Chancay en una casona republicana del centro." },
-      { nombre: "Museo Metropolitano de Lima", distrito: "Cercado de Lima", cat: "Historia", coords: [-12.0686, -77.0339], desc: "Recorrido audiovisual e inmersivo por la historia de la ciudad de Lima." },
-      { nombre: "Museo de Oro del Perú", distrito: "Surco", cat: "Historia", coords: [-12.1063, -76.9777], desc: "Piezas de oro precolombino y una extensa colección de armas del mundo." },
-      { nombre: "Casa Museo José Carlos Mariátegui", distrito: "Cercado de Lima", cat: "Historia", coords: [-12.0561, -77.0334], desc: "Casa del pensador y escritor peruano, hoy centro cultural y de memoria." },
-      { nombre: "Museo de Sitio Huaca Pucllana", distrito: "Miraflores", cat: "Arqueología", coords: [-12.1110, -77.0344], desc: "Pirámide de adobe de la cultura Lima, en pleno corazón de Miraflores." },
-      { nombre: "Museo de Historia Natural (UNMSM)", distrito: "Jesús María", cat: "Ciencia", coords: [-12.0599, -77.0470], desc: "Biodiversidad peruana: fósiles, fauna y flora, de la Universidad de San Marcos." },
-      { nombre: "Centro Cultural / Museo de SJM", distrito: "San Juan de Miraflores (SJM)", cat: "Comunitario", coords: [-12.1581, -76.9711], desc: "Espacio cultural comunitario en el distrito de San Juan de Miraflores, sur de Lima." },
-      { nombre: "Museo de Sitio Pampa de Cuevas / Lurín-Sur", distrito: "San Juan de Miraflores (SJM)", cat: "Arqueología", coords: [-12.1665, -76.9603], desc: "Vestigios arqueológicos del cono sur limeño cercanos a SJM." }
+      { nombre: "Museo de Arte de Lima (MALI)", distrito: "Cercado de Lima", nombdist: "LIMA", cat: "Arte", coords: [-12.0628, -77.0353], desc: "Principal museo de arte del país, con 3000 años de historia peruana en el Parque de la Exposición." },
+      { nombre: "Museo Nacional de Arqueología, Antropología e Historia", distrito: "Pueblo Libre", nombdist: "PUEBLO LIBRE", cat: "Historia", coords: [-12.0723, -77.0639], desc: "El museo estatal más antiguo del Perú (1822). Estela de Raimondi." },
+      { nombre: "Museo Larco", distrito: "Pueblo Libre", nombdist: "PUEBLO LIBRE", cat: "Arqueología", coords: [-12.0716, -77.0703], desc: "Casona virreinal con cerámica precolombina y arte erótico mochica." },
+      { nombre: "Museo de la Nación", distrito: "San Borja", nombdist: "SAN BORJA", cat: "Historia", coords: [-12.0905, -76.9947], desc: "Muestras sobre culturas peruanas y el Lugar de la Memoria." },
+      { nombre: "Museo de Sitio Pachacamac", distrito: "Lurín", nombdist: "LURIN", cat: "Arqueología", coords: [-12.2266, -76.8987], desc: "Santuario arqueológico prehispánico al sur de Lima." },
+      { nombre: "Museo Pedro de Osma", distrito: "Barranco", nombdist: "BARRANCO", cat: "Arte", coords: [-12.1556, -77.0214], desc: "Arte virreinal de la escuela cusqueña en una mansión de Barranco." },
+      { nombre: "MATE - Museo Mario Testino", distrito: "Barranco", nombdist: "BARRANCO", cat: "Arte", coords: [-12.1471, -77.0211], desc: "Fotografía contemporánea y la serie 'Alta Moda'." },
+      { nombre: "Museo Andrés del Castillo", distrito: "Cercado de Lima", nombdist: "LIMA", cat: "Arqueología", coords: [-12.0476, -77.0331], desc: "Minerales, cerámica Nasca y Chancay en una casona republicana." },
+      { nombre: "Museo Metropolitano de Lima", distrito: "Cercado de Lima", nombdist: "LIMA", cat: "Historia", coords: [-12.0686, -77.0339], desc: "Recorrido audiovisual e inmersivo por la historia de Lima." },
+      { nombre: "Museo de Oro del Perú", distrito: "Surco", nombdist: "SANTIAGO DE SURCO", cat: "Historia", coords: [-12.1063, -76.9777], desc: "Oro precolombino y una extensa colección de armas." },
+      { nombre: "Casa Museo José Carlos Mariátegui", distrito: "Cercado de Lima", nombdist: "LIMA", cat: "Historia", coords: [-12.0561, -77.0334], desc: "Casa del pensador peruano, hoy centro cultural." },
+      { nombre: "Museo de Sitio Huaca Pucllana", distrito: "Miraflores", nombdist: "MIRAFLORES", cat: "Arqueología", coords: [-12.1110, -77.0344], desc: "Pirámide de adobe de la cultura Lima en Miraflores." },
+      { nombre: "Museo de Historia Natural (UNMSM)", distrito: "Jesús María", nombdist: "JESUS MARIA", cat: "Ciencia", coords: [-12.0599, -77.0470], desc: "Biodiversidad peruana de la Universidad de San Marcos." },
+      { nombre: "Centro Cultural / Museo de SJM", distrito: "San Juan de Miraflores (SJM)", nombdist: "SAN JUAN DE MIRAFLORES", cat: "Comunitario", coords: [-12.1581, -76.9711], desc: "Espacio cultural comunitario en San Juan de Miraflores, sur de Lima." },
+      { nombre: "Museo de Sitio Pampa de Cuevas / Lurín-Sur", distrito: "San Juan de Miraflores (SJM)", nombdist: "SAN JUAN DE MIRAFLORES", cat: "Arqueología", coords: [-12.1665, -76.9603], desc: "Vestigios arqueológicos del cono sur cercanos a SJM." }
     ];
 
     const CAT_COLORS = {
-      "Arte": "#e23b3b",
-      "Arqueología": "#f2a900",
-      "Historia": "#3b82e2",
-      "Ciencia": "#2ecc71",
-      "Comunitario": "#9b59b6"
+      "Arte": "#e23b3b", "Arqueología": "#f2a900", "Historia": "#3b82e2",
+      "Ciencia": "#2ecc71", "Comunitario": "#9b59b6"
     };
+
+    /* ---------- Utilidades ---------- */
+    function prop(p, keys) {
+      for (const k of keys) if (p && p[k] != null && p[k] !== "") return p[k];
+      return "";
+    }
+    const DEP_KEYS  = ["NOMBDEP", "FIRST_NOMB", "departamento", "NAME_1", "name"];
+    const DIST_KEYS = ["NOMBDIST", "distrito", "NAME_3", "name"];
+    const PROV_KEYS = ["NOMBPROV", "provincia", "NAME_2"];
+    const norm = s => String(s).trim().toUpperCase();
 
     /* ---------- Mapa (estilo limpio, sin detalles) ---------- */
     const map = L.map("map", { zoomControl: true, minZoom: 4 })
       .setView(PERU_VIEW.center, PERU_VIEW.zoom);
 
-    // CARTO Positron: mapa minimalista, sin tanto detalle.
     L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-      maxZoom: 19,
-      subdomains: "abcd",
-      attribution: '© OpenStreetMap · © CARTO'
+      maxZoom: 19, subdomains: "abcd", attribution: '© OpenStreetMap · © CARTO'
     }).addTo(map);
 
-    /* ---------- Capas ---------- */
-    const regionLayer = L.layerGroup().addTo(map);
-    const museosLayer = L.layerGroup();
+    const depLayer    = L.layerGroup().addTo(map);  // departamentos (vista Perú)
+    const distLayer   = L.layerGroup();             // distritos de Lima
+    const museosLayer = L.layerGroup();             // marcadores de museos
 
-    // Etiquetas de regiones
-    REGIONES.forEach(r => {
-      const icon = L.divIcon({
-        className: "",
-        html: `<div class="region-label ${r.lima ? "lima" : ""}">${r.lima ? "🏛️ " : ""}${r.nombre}</div>`,
-        iconSize: null
-      });
-      const m = L.marker(r.coords, { icon }).addTo(regionLayer);
-      m.on("click", (e) => {
-        L.DomEvent.stopPropagation(e);
-        if (r.lima) {
-          enterLima();
-        } else {
-          map.flyTo(r.coords, 8, { duration: 0.8 });
-          showToast(`${r.nombre}: aún sin museos cargados. Lima es la región con datos.`);
-        }
-      });
-    });
-
-    // Marcadores de museos
+    /* ---------- Marcadores de museos ---------- */
     function makeIcon(color) {
       return L.divIcon({
         className: "",
         html: `<div style="background:${color};width:18px;height:18px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5)"></div>`,
-        iconSize: [22, 22],
-        iconAnchor: [11, 22],
-        popupAnchor: [0, -20]
+        iconSize: [22, 22], iconAnchor: [11, 22], popupAnchor: [0, -20]
       });
     }
-
     const markers = [];
     MUSEOS.forEach((m, i) => {
       const color = CAT_COLORS[m.cat] || "#e23b3b";
@@ -327,11 +284,75 @@
         <p style="margin:0">${m.desc}</p>
         <p style="margin:6px 0 0"><a href="https://www.google.com/maps/search/?api=1&query=${m.coords[0]},${m.coords[1]}" target="_blank" rel="noopener">Cómo llegar →</a></p>
       `);
-      marker.addTo(museosLayer);
       markers.push({ data: m, marker, index: i });
     });
 
-    /* ---------- Navegación Perú <-> Lima ---------- */
+    /* ---------- Carga de límites geográficos ---------- */
+    let limaDepFeature = null;
+    let limaBounds = null;
+    let distGeoReady = false;
+
+    // Departamentos: dibuja todos, resalta Lima; clic en la figura de Lima -> distritos.
+    fetch(GEO_DEP)
+      .then(r => r.json())
+      .then(gj => {
+        L.geoJSON(gj, {
+          style: f => {
+            const isLima = norm(prop(f.properties, DEP_KEYS)) === "LIMA";
+            return isLima
+              ? { color: "#b07d00", weight: 2, fillColor: "#f2a900", fillOpacity: 0.65 }
+              : { color: "#8aa0b5", weight: 1, fillColor: "#c3cedb", fillOpacity: 0.35 };
+          },
+          onEachFeature: (f, layer) => {
+            const name = prop(f.properties, DEP_KEYS);
+            const isLima = norm(name) === "LIMA";
+            layer.bindTooltip(name, { sticky: true, className: "district-tip" });
+            if (isLima) limaDepFeature = layer;
+            layer.on("click", (e) => {
+              L.DomEvent.stopPropagation(e);
+              if (isLima) enterLima();
+              else { map.flyToBounds(layer.getBounds(), { duration: 0.8 }); showToast(`${name}: aún sin museos cargados.`); }
+            });
+            layer.on("mouseover", () => layer.setStyle({ weight: 2.5 }));
+            layer.on("mouseout",  () => layer.setStyle({ weight: isLima ? 2 : 1 }));
+          }
+        }).addTo(depLayer);
+      })
+      .catch(() => showToast("No se pudieron cargar los límites del Perú (revisa tu conexión)."));
+
+    // Distritos de Lima (provincia Lima) + Callao opcional.
+    fetch(GEO_DIST)
+      .then(r => r.json())
+      .then(gj => {
+        const feats = gj.features.filter(f => norm(prop(f.properties, PROV_KEYS)) === "LIMA");
+        const fc = { type: "FeatureCollection", features: feats };
+        const gl = L.geoJSON(fc, {
+          style: { color: "#e23b3b", weight: 1, fillColor: "#e23b3b", fillOpacity: 0.12 },
+          onEachFeature: (f, layer) => {
+            const dname = prop(f.properties, DIST_KEYS);
+            const n = MUSEOS.filter(m => norm(m.nombdist) === norm(dname)).length;
+            layer.bindTooltip(`${dname}${n ? ` · ${n} museo${n > 1 ? "s" : ""}` : ""}`,
+              { sticky: true, className: "district-tip" });
+            layer.on("mouseover", () => layer.setStyle({ fillOpacity: 0.38, weight: 2 }));
+            layer.on("mouseout",  () => layer.setStyle({ fillOpacity: (norm(dname) === selectedDistrict ? 0.45 : 0.12), weight: 1 }));
+            layer.on("click", (e) => {
+              L.DomEvent.stopPropagation(e);
+              selectDistrict(norm(dname), dname, layer);
+            });
+            f._layerRef = layer;
+          }
+        });
+        gl.addTo(distLayer);
+        limaDistGeo = gl;
+        limaBounds = gl.getBounds();
+        distGeoReady = true;
+        if (inLima) map.flyToBounds(limaBounds, { duration: 0.9 });
+      })
+      .catch(() => showToast("No se pudieron cargar los distritos de Lima."));
+
+    let limaDistGeo = null;
+
+    /* ---------- Navegación ---------- */
     const titleEl = document.getElementById("title");
     const subtitleEl = document.getElementById("subtitle");
     const hintEl = document.getElementById("hint");
@@ -340,15 +361,19 @@
     const backEl = document.getElementById("back");
     const listEl = document.getElementById("list");
     let inLima = false;
+    let selectedDistrict = "";   // NOMBDIST en mayúsculas, "" = todos
 
     function enterLima() {
       if (inLima) return;
       inLima = true;
-      map.flyTo(LIMA_VIEW.center, LIMA_VIEW.zoom, { duration: 1.0 });
-      map.removeLayer(regionLayer);
+      map.removeLayer(depLayer);
+      distLayer.addTo(map);
       museosLayer.addTo(map);
-      titleEl.textContent = "🏛️ Museos de Lima";
-      subtitleEl.textContent = "Lima Metropolitana (incluye SJM)";
+      markers.forEach(({ marker }) => marker.addTo(museosLayer));
+      if (distGeoReady && limaBounds) map.flyToBounds(limaBounds, { duration: 0.9 });
+      else map.flyTo([-12.05, -77.02], 11, { duration: 0.9 });
+      titleEl.textContent = "🏛️ Lima · distritos";
+      subtitleEl.textContent = "Haz clic en la figura de un distrito (p. ej. SJM)";
       hintEl.style.display = "none";
       controlsEl.style.display = "flex";
       countEl.style.display = "block";
@@ -357,13 +382,14 @@
     }
 
     function enterPeru() {
-      if (!inLima) return;
       inLima = false;
-      map.flyTo(PERU_VIEW.center, PERU_VIEW.zoom, { duration: 1.0 });
+      selectedDistrict = "";
+      map.removeLayer(distLayer);
       map.removeLayer(museosLayer);
-      regionLayer.addTo(map);
+      depLayer.addTo(map);
+      map.flyTo(PERU_VIEW.center, PERU_VIEW.zoom, { duration: 0.9 });
       titleEl.textContent = "🇵🇪 Perú";
-      subtitleEl.textContent = "Haz clic en el mapa (o en Lima) para enfocar Lima";
+      subtitleEl.textContent = "Haz clic sobre la figura de Lima en el mapa";
       hintEl.style.display = "block";
       controlsEl.style.display = "none";
       countEl.style.display = "none";
@@ -371,11 +397,22 @@
       listEl.innerHTML = "";
     }
 
-    // Clic en el mapa (fondo) en la vista de Perú -> enfoca Lima
-    map.on("click", () => { if (!inLima) enterLima(); });
-    backEl.addEventListener("click", enterPeru);
+    function selectDistrict(key, label, layer) {
+      // toggle: si vuelves a clicar el mismo distrito, se deselecciona
+      selectedDistrict = (selectedDistrict === key) ? "" : key;
+      if (limaDistGeo) limaDistGeo.setStyle(f => ({
+        color: "#e23b3b", weight: 1, fillColor: "#e23b3b",
+        fillOpacity: norm(prop(f.properties, DIST_KEYS)) === selectedDistrict ? 0.45 : 0.12
+      }));
+      if (selectedDistrict && layer) map.flyToBounds(layer.getBounds(), { duration: 0.8, maxZoom: 14 });
+      else if (limaBounds) map.flyToBounds(limaBounds, { duration: 0.8 });
+      subtitleEl.textContent = selectedDistrict ? `Distrito: ${label}` : "Haz clic en la figura de un distrito (p. ej. SJM)";
+      render();
+    }
 
-    /* ---------- Lista + filtros (vista Lima) ---------- */
+    backEl.addEventListener("click", () => { if (selectedDistrict) selectDistrict(selectedDistrict, "", null); else enterPeru(); });
+
+    /* ---------- Lista + filtros ---------- */
     const cats = [...new Set(MUSEOS.map(m => m.cat))];
     let activeCat = "Todos";
     const filtersEl = document.getElementById("filters");
@@ -398,11 +435,12 @@
     function visible(m) {
       const q = searchEl.value.trim().toLowerCase();
       const matchCat = activeCat === "Todos" || m.cat === activeCat;
+      const matchDist = !selectedDistrict || norm(m.nombdist) === selectedDistrict;
       const matchQ = !q ||
         m.nombre.toLowerCase().includes(q) ||
         m.distrito.toLowerCase().includes(q) ||
         m.desc.toLowerCase().includes(q);
-      return matchCat && matchQ;
+      return matchCat && matchDist && matchQ;
     }
 
     function render() {
@@ -429,9 +467,9 @@
           museosLayer.removeLayer(marker);
         }
       });
-      countEl.textContent = `${shown} museo${shown === 1 ? "" : "s"} mostrado${shown === 1 ? "" : "s"}`;
+      const ctx = selectedDistrict ? ` en este distrito` : "";
+      countEl.textContent = `${shown} museo${shown === 1 ? "" : "s"}${ctx}`;
     }
-
     searchEl.addEventListener("input", render);
 
     /* ---------- Toast ---------- */
@@ -441,7 +479,7 @@
       toastEl.textContent = msg;
       toastEl.classList.add("show");
       clearTimeout(toastTimer);
-      toastTimer = setTimeout(() => toastEl.classList.remove("show"), 2600);
+      toastTimer = setTimeout(() => toastEl.classList.remove("show"), 2800);
     }
   </script>
 </body>
