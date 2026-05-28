@@ -8,6 +8,8 @@
  * el código fuente que ve el navegador.
  */
 header('Content-Type: text/html; charset=utf-8');
+// Sin caché durante el testeo, para ver siempre la última versión.
+header('Cache-Control: no-store, no-cache, must-revalidate');
 ?>
 <!DOCTYPE html>
 <html lang="es">

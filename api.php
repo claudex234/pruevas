@@ -43,7 +43,9 @@ if ($ruta === null) {
 }
 
 header('Content-Type: application/json; charset=utf-8');
-header('Cache-Control: public, max-age=86400'); // 1 día
+// Sin caché durante el testeo (para producción puedes volver a:
+// 'public, max-age=86400').
+header('Cache-Control: no-store, no-cache, must-revalidate');
 header('X-Content-Type-Options: nosniff');
 
 readfile($ruta);
