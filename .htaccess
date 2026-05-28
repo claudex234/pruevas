@@ -1,19 +1,2 @@
-# El visor es visor.php (se sirve también al entrar al dominio raíz).
+# Mínimo y seguro: al entrar al dominio raíz se sirve visor.php.
 DirectoryIndex visor.php index.php
-
-# Bloquea la descarga directa de los archivos de datos, estén en /data o
-# sueltos en la raíz. api.php sigue leyéndolos internamente con readfile().
-<FilesMatch "(\.geojson|museos\.json)$">
-  <IfModule mod_authz_core.c>
-    Require all denied
-  </IfModule>
-  <IfModule !mod_authz_core.c>
-    Order deny,allow
-    Deny from all
-  </IfModule>
-</FilesMatch>
-
-# Compresión de los JSON/GeoJSON que entrega api.php (si está disponible).
-<IfModule mod_deflate.c>
-  AddOutputFilterByType DEFLATE application/json text/html text/css application/javascript
-</IfModule>
