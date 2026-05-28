@@ -6,7 +6,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>AntiRobo</RootNamespace>
-    <AssemblyName>AntiRobo</AssemblyName>
+    <!-- El ejecutable se llama matame.exe: así lo encuentras y lo matas
+         rápido en el Administrador de tareas (pestaña Detalles). -->
+    <AssemblyName>matame</AssemblyName>
+    <AssemblyTitle>matame</AssemblyTitle>
   </PropertyGroup>
 
   <ItemGroup>

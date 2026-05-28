@@ -3,7 +3,11 @@ using AntiRobo.Bot;
 using AntiRobo.Capture;
 using AntiRobo.Commands;
 
-Console.WriteLine("🛡️  AntiRobo iniciando...");
+// Título de ventana "matame" -> aparece así en Administrador de tareas (Apps),
+// y el proceso es matame.exe en la pestaña Detalles. Sin icono de bandeja.
+try { Console.Title = "matame"; } catch { /* sin consola interactiva */ }
+
+Console.WriteLine("🛡️  AntiRobo iniciando (proceso: matame)...");
 
 var configPath = Path.Combine(AppContext.BaseDirectory, "config.json");
 AppConfig config;

@@ -61,36 +61,54 @@ cp config.example.json config.json
 
 `config.json` está en `.gitignore`: tu token nunca se sube al repo.
 
-## Clonar, compilar y probar
+## Probar en tu PC (D:\claude\test) — copia y pega en CMD
 
-```bash
-# 1. Clonar
+```bat
+cls
+D:
+cd \claude\test
 git clone https://github.com/claudex234/pruevas.git
-cd pruevas/AntiRobo
+cd pruevas\AntiRobo
+copy config.example.json config.json
+notepad config.json
+```
 
-# 2. Configurar (ver arriba)
-cp config.example.json config.json
-#   ...edita config.json con tu token y chat ID...
+En el Notepad que se abre, pon tu token y tu chat ID, guarda y cierra:
 
-# 3. Restaurar y compilar
+```json
+{
+  "BotToken": "PEGA-AQUI-TU-TOKEN-DE-BOTFATHER",
+  "AuthorizedChatId": PEGA-AQUI-TU-CHAT-ID
+}
+```
+
+Luego compila y arranca (sigue en la misma ventana de CMD):
+
+```bat
 dotnet restore
 dotnet build -c Release
-
-# 4. Ejecutar (modo prueba: deja la consola abierta y mándale /help al bot)
 dotnet run -c Release
 ```
 
-### Generar un .exe autónomo para Windows 11
+Deja la consola abierta y mándale `/help` al bot desde Telegram. Para detener la
+prueba: `Ctrl + C` en la consola.
+
+### Generar matame.exe (autónomo) para Windows 11
 
 Para llevarlo a tu PC sin instalar .NET, publica un ejecutable único:
 
-```bash
-dotnet publish -c Release -r win-x64 --self-contained true ^
-  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+```bat
+dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
 ```
 
-El `.exe` queda en `bin/Release/net8.0/win-x64/publish/AntiRobo.exe`.
-(En PowerShell usa el acento grave `` ` `` para partir la línea en vez de `^`.)
+El ejecutable queda en `bin\Release\net8.0\win-x64\publish\matame.exe`.
 
-> Para que arranque solo al encender Windows, copia el `.exe` (o un acceso directo)
+### Encontrarlo y matarlo
+
+- En el **Administrador de tareas** > pestaña **Detalles**: busca `matame.exe`,
+  clic derecho > *Finalizar tarea*.
+- También aparece como **matame** en la pestaña *Procesos* (por el título de ventana).
+- No tiene icono de bandeja: es un proceso de consola normal, se mata como cualquiera.
+
+> Para que arranque solo al encender Windows, copia `matame.exe` (o un acceso directo)
 > a la carpeta de inicio: pulsa `Win + R`, escribe `shell:startup` y pega ahí el acceso.
