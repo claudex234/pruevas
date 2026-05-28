@@ -420,21 +420,39 @@
 
     /* ---------- Estado y datos ---------- */
     let depFeatures = [], distFeatures = [];
-    let distProj = null;
-    let distEls = {};   // key -> path element
-    let pins = [];      // { data, index, g, c }
+    let proj = null;                 // proyector compartido (basado en Perú)
+    let depG, distG, pinG;           // capas SVG
+    let distEls = {};                // key -> { el, bbox, key, name, n }
+    let pins = [];                   // { data, index, g }
+    let limaBox = null;              // bbox proyectada de la provincia de Lima
     let view = "peru";
     let selectedDistrict = "";
+    const FULL_VB = { x: 0, y: 0, w: VBW, h: VBH };
 
     /* ---------- Etiqueta flotante del mapa ---------- */
     function setLabel(txt) { labelEl.textContent = txt; labelEl.classList.add("show"); }
     function clearLabel() { labelEl.classList.remove("show"); }
 
-    /* ---------- Vista Perú ---------- */
-    function renderPeru() {
-      view = "peru"; selectedDistrict = "";
+    /* ---------- BBox proyectada (no depende de getBBox / layout) ---------- */
+    function projectedBBox(features) {
+      let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+      eachCoord(features, (lon, lat) => {
+        const p = proj([lon, lat]);
+        if (p[0] < minx) minx = p[0]; if (p[0] > maxx) maxx = p[0];
+        if (p[1] < miny) miny = p[1]; if (p[1] > maxy) maxy = p[1];
+      });
+      return { x: minx, y: miny, width: maxx - minx, height: maxy - miny };
+    }
+
+    /* ---------- Construcción del mapa (una sola vez) ----------
+       Todo comparte el MISMO sistema de coordenadas (proyector de Perú),
+       de modo que Perú→Lima→distrito son siempre animaciones de viewBox. */
+    function buildMap() {
       svg.innerHTML = "";
-      const proj = makeProjector(depFeatures);
+      proj = makeProjector(depFeatures);
+
+      // Departamentos
+      depG = svgEl("g", { id: "deplayer" });
       depFeatures.forEach(f => {
         const name = prop(f.properties, DEP_KEYS), isLima = norm(name) === "LIMA";
         const p = svgEl("path", { d: featurePath(f, proj), class: "dep" + (isLima ? " lima" : ""), tabindex: "-1" });
@@ -442,38 +460,33 @@
         p.addEventListener("click", e => { e.stopPropagation(); isLima ? enterLima() : showToast(`${name}: aún sin museos cargados.`); });
         p.addEventListener("mouseenter", () => setLabel(name));
         p.addEventListener("mouseleave", clearLabel);
-        svg.appendChild(p);
+        depG.appendChild(p);
       });
-      curVB = { x: 0, y: 0, w: VBW, h: VBH };
-      svg.setAttribute("viewBox", `0 0 ${VBW} ${VBH}`);
-      setSidebar("peru");
-    }
+      svg.appendChild(depG);
 
-    /* ---------- Vista Lima (distritos) ---------- */
-    function enterLima() {
-      if (!distFeatures.length) { showToast("Aún cargando los distritos de Lima…"); return; }
-      view = "lima"; selectedDistrict = "";
-      hideDetail();
-      svg.innerHTML = "";
-      distProj = makeProjector(distFeatures);
+      // Distritos de Lima (mismo proyector), ocultos al inicio
+      distG = svgEl("g", { id: "distlayer" });
+      distG.style.display = "none";
       distEls = {};
       distFeatures.forEach(f => {
         const name = prop(f.properties, DIST_KEYS), key = norm(name);
         const n = MUSEOS.filter(m => norm(m.nombdist) === key).length;
-        const p = svgEl("path", { d: featurePath(f, distProj), class: "dist" + (n ? " has" : ""), tabindex: "-1" });
-        p.appendChild(titleNode(`${name}${n ? ` · ${n} museo${n > 1 ? "s" : ""}` : ""}`));
+        const p = svgEl("path", { d: featurePath(f, proj), class: "dist" + (n ? " has" : ""), tabindex: "-1" });
+        const tip = `${name}${n ? ` · ${n} museo${n > 1 ? "s" : ""}` : ""}`;
+        p.appendChild(titleNode(tip));
         p.addEventListener("click", e => { e.stopPropagation(); selectDistrict(key, name); });
-        p.addEventListener("mouseenter", () => setLabel(`${name}${n ? ` · ${n} museo${n > 1 ? "s" : ""}` : ""}`));
+        p.addEventListener("mouseenter", () => setLabel(tip));
         p.addEventListener("mouseleave", clearLabel);
-        svg.appendChild(p);
-        distEls[key] = p;
+        distG.appendChild(p);
+        distEls[key] = { el: p, bbox: projectedBBox([f]), key, name, n };
       });
-      // capa de pines (encima)
-      const pinG = svgEl("g", { id: "pinlayer" });
-      svg.appendChild(pinG);
+      svg.appendChild(distG);
+
+      // Pines de museos (mismo proyector), ocultos al inicio
+      pinG = svgEl("g", { id: "pinlayer" });
       pins = [];
       MUSEOS.forEach((m, i) => {
-        const [x, y] = distProj(m.coords);
+        const [x, y] = proj(m.coords);
         const g = svgEl("g", { class: "pin", transform: `translate(${x.toFixed(1)} ${y.toFixed(1)})` });
         g.style.display = "none";
         g.appendChild(svgEl("circle", { r: PIN_BASE, fill: CAT_COLORS[m.cat] || "#e23b3b" }));
@@ -482,31 +495,55 @@
         g.addEventListener("mouseenter", () => setLabel(m.nombre));
         g.addEventListener("mouseleave", clearLabel);
         pinG.appendChild(g);
-        pins.push({ data: m, index: i, g, c: g.firstChild });
+        pins.push({ data: m, index: i, g });
       });
-      animateVB({ x: 0, y: 0, w: VBW, h: VBH });
+      svg.appendChild(pinG);
+
+      limaBox = distFeatures.length ? projectedBBox(distFeatures) : null;
+      curVB = { ...FULL_VB };
+      setVB(FULL_VB);
+      enterPeru();   // estado inicial
+    }
+
+    /* ---------- Niveles (siempre con animación de viewBox) ---------- */
+    function enterPeru() {
+      view = "peru"; selectedDistrict = "";
+      hideDetail();
+      if (distG) distG.style.display = "none";
+      pins.forEach(p => p.g.style.display = "none");
+      Object.values(distEls).forEach(d => d.el.classList.remove("sel"));
+      if (depG) depG.style.display = "";
+      animateVB(FULL_VB);
+      setSidebar("peru");
+    }
+
+    function enterLima() {
+      if (!distFeatures.length || !limaBox) { showToast("Aún cargando los distritos de Lima…"); return; }
+      view = "lima"; selectedDistrict = "";
+      hideDetail();
+      depG.style.display = "none";
+      distG.style.display = "";
+      pins.forEach(p => p.g.style.display = "none");
+      Object.values(distEls).forEach(d => d.el.classList.remove("sel"));
+      animateVB(fitBox(limaBox, 0.10));     // ZOOM Perú → Lima
       setSidebar("lima");
     }
 
-    /* ---------- Selección de distrito (última capa: museos) ---------- */
     function selectDistrict(key, label) {
       hideDetail();
       selectedDistrict = (selectedDistrict === key) ? "" : key;
-      Object.entries(distEls).forEach(([k, el]) => el.classList.toggle("sel", k === selectedDistrict));
+      Object.values(distEls).forEach(d => d.el.classList.toggle("sel", d.key === selectedDistrict));
       if (selectedDistrict) {
-        const bb = distEls[key].getBBox();
-        animateVB(fitBox(bb, 0.35));
+        animateVB(fitBox(distEls[key].bbox, 0.35));   // ZOOM Lima → distrito
         setSidebar("distrito", label);
         render();
       } else {
-        animateVB({ x: 0, y: 0, w: VBW, h: VBH });
+        animateVB(fitBox(limaBox, 0.10));             // regresa a Lima
         setSidebar("lima");
         pins.forEach(p => p.g.style.display = "none");
         listEl.innerHTML = "";
       }
     }
-
-    function enterPeru() { renderPeru(); }
 
     /* ---------- Sidebar por estado ---------- */
     const HINT_LIMA = "Estás en <b>Lima</b>. Haz clic en la <b>figura de un distrito</b> (los verdes tienen museos, p. ej. <b>SJM</b>).";
@@ -672,7 +709,7 @@
         ? dist.value.features.filter(f => norm(prop(f.properties, PROV_KEYS)) === "LIMA")
         : [];
       if (!distFeatures.length) showToast("No se cargaron los distritos de Lima; el zoom a distritos no estará disponible.");
-      renderPeru();
+      buildMap();
     });
   </script>
 </body>
