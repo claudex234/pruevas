@@ -145,23 +145,17 @@
     #detail h2 { margin: 10px 0 6px; font-size: 19px; line-height: 1.3; }
     #detail .d-dist { margin: 0 0 16px; font-size: 13px; color: var(--accent-2); }
 
-    /* Galería de fotos */
+    /* Galería de fotos (cuadrícula, abajo) */
     #detail .d-gallery {
-      display: flex;
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
       gap: 8px;
-      overflow-x: auto;
-      padding-bottom: 6px;
-      margin-bottom: 12px;
-      scroll-snap-type: x mandatory;
     }
     #detail .d-gallery .d-photo,
     #detail .d-gallery .d-ph {
-      flex: 0 0 auto;
-      width: 86%;
-      min-width: 220px;
-      height: 150px;
-      border-radius: 12px;
-      scroll-snap-align: start;
+      width: 100%;
+      height: 120px;
+      border-radius: 10px;
     }
     #detail .d-photo { object-fit: cover; border: 1px solid var(--border); }
     #detail .d-ph {
@@ -661,7 +655,6 @@
 
       detailEl.innerHTML = `
         <button class="back2" id="toList">← Volver a la lista</button>
-        <div class="d-gallery">${tiles.join("")}</div>
         <span class="d-tag" style="background:${color}">${m.cat}</span>
         <h2>${m.nombre}</h2>
         <p class="d-dist">📍 ${m.distrito}</p>
@@ -685,6 +678,11 @@
         <div class="d-actions">
           <a class="d-go" href="${maps}" target="_blank" rel="noopener">Cómo llegar →</a>
           ${webBtn}
+        </div>
+
+        <div class="d-section">
+          <h4>Fotos</h4>
+          <div class="d-gallery">${tiles.join("")}</div>
         </div>
       `;
 
