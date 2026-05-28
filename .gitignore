@@ -1,0 +1,10 @@
+# .NET build output
+bin/
+obj/
+
+# Configuración real con el token del bot (NO subir)
+config.json
+
+# Publicación
+publish/
+*.user
