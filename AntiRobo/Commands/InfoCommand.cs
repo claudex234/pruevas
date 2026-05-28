@@ -1,4 +1,5 @@
 using System.Net.NetworkInformation;
+using System.Reflection;
 
 namespace AntiRobo.Commands;
 
@@ -12,6 +13,8 @@ public sealed class InfoCommand : ICommand
     {
         var uptime = TimeSpan.FromMilliseconds(Environment.TickCount64);
         var localIps = GetLocalIps();
+        var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "?";
+        var built = GetBuildTime();
 
         var text = $"""
             💻 Equipo
@@ -20,8 +23,26 @@ public sealed class InfoCommand : ICommand
             SO: {Environment.OSVersion}
             Encendido hace: {uptime.Days}d {uptime.Hours}h {uptime.Minutes}m
             IP(s) local(es): {localIps}
+            Versión: {version}
+            Compilado: {built}
             """;
         return Task.FromResult(text);
+    }
+
+    /// <summary>Fecha del .exe en ejecución: sirve para saber si corres el último build.</summary>
+    private static string GetBuildTime()
+    {
+        try
+        {
+            var path = Environment.ProcessPath;
+            return path is not null
+                ? File.GetLastWriteTime(path).ToString("yyyy-MM-dd HH:mm")
+                : "?";
+        }
+        catch
+        {
+            return "?";
+        }
     }
 
     private static string GetLocalIps()

@@ -12,6 +12,7 @@
          rápido en el Administrador de tareas (pestaña Detalles). -->
     <AssemblyName>matame</AssemblyName>
     <AssemblyTitle>matame</AssemblyTitle>
+    <Version>1.1.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
