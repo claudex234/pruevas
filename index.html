@@ -122,6 +122,44 @@
       font-weight: 600;
     }
     .card p { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.4; }
+    /* Panel de detalle del museo */
+    #detail { display: none; flex: 1; overflow-y: auto; padding: 16px 18px 24px; }
+    #detail .back2 {
+      background: none;
+      border: none;
+      color: var(--accent-2);
+      font-size: 13px;
+      cursor: pointer;
+      padding: 0 0 12px;
+    }
+    #detail .d-tag {
+      display: inline-block;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      padding: 3px 9px;
+      border-radius: 6px;
+      color: #1a1200;
+      font-weight: 700;
+    }
+    #detail h2 { margin: 10px 0 6px; font-size: 19px; line-height: 1.3; }
+    #detail .d-dist { margin: 0 0 14px; font-size: 13px; color: var(--accent-2); }
+    #detail .d-desc { margin: 0 0 18px; font-size: 14px; line-height: 1.6; color: var(--text); }
+    #detail .d-meta { font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--border); padding-top: 12px; margin-top: 4px; }
+    #detail .d-meta div { margin-bottom: 6px; }
+    #detail .d-go {
+      display: inline-block;
+      margin-top: 6px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      background: var(--accent);
+      color: #fff;
+      text-decoration: none;
+      font-size: 13.5px;
+      font-weight: 600;
+    }
+    #detail .d-go:hover { background: #c8302f; }
+
     footer {
       padding: 10px 18px;
       font-size: 11px;
@@ -204,6 +242,7 @@
     </div>
     <div class="count" id="count"></div>
     <div id="list"></div>
+    <div id="detail"></div>
     <footer>
       Límites: <a href="https://github.com/juaneladio/peru-geojson" target="_blank" rel="noopener">peru-geojson</a> · Mapa © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OSM</a>/<a href="https://carto.com/" target="_blank" rel="noopener">CARTO</a>
     </footer>
@@ -289,6 +328,7 @@
         <p style="margin:0">${m.desc}</p>
         <p style="margin:6px 0 0"><a href="https://www.google.com/maps/search/?api=1&query=${m.coords[0]},${m.coords[1]}" target="_blank" rel="noopener">Cómo llegar →</a></p>
       `);
+      marker.on("click", () => showDetail(i));
       markers.push({ data: m, marker, index: i });
     });
 
@@ -365,6 +405,7 @@
     const countEl = document.getElementById("count");
     const backEl = document.getElementById("back");
     const listEl = document.getElementById("list");
+    const detailEl = document.getElementById("detail");
     let inLima = false;
     let selectedDistrict = "";   // NOMBDIST en mayúsculas, "" = todos
 
@@ -373,6 +414,7 @@
     function enterLima() {
       if (inLima) return;
       inLima = true;
+      hideDetail();
       map.removeLayer(depLayer);
       distLayer.addTo(map);
       if (distGeoReady && limaBounds) map.flyToBounds(limaBounds, { duration: 0.9 });
@@ -390,6 +432,7 @@
     function enterPeru() {
       inLima = false;
       selectedDistrict = "";
+      hideDetail();
       map.removeLayer(distLayer);
       map.removeLayer(museosLayer);
       depLayer.addTo(map);
@@ -404,6 +447,7 @@
     }
 
     function selectDistrict(key, label, layer) {
+      hideDetail();
       // toggle: si vuelves a clicar el mismo distrito, se deselecciona
       selectedDistrict = (selectedDistrict === key) ? "" : key;
       if (limaDistGeo) limaDistGeo.setStyle(f => ({
@@ -479,10 +523,8 @@
             <h3><span class="tag" style="background:${CAT_COLORS[data.cat]}">${data.cat}</span>${data.nombre}</h3>
             <p>${data.distrito} — ${data.desc}</p>`;
           card.onclick = () => {
-            selectedIndex = index;
             map.flyTo(data.coords, 15, { duration: 0.8 });
-            marker.openPopup();
-            render();
+            showDetail(index);
           };
           listEl.appendChild(card);
         } else {
@@ -493,6 +535,44 @@
       countEl.textContent = `${shown} museo${shown === 1 ? "" : "s"}${ctx}`;
     }
     searchEl.addEventListener("input", render);
+
+    /* ---------- Detalle del museo ---------- */
+    function showDetail(index) {
+      const m = MUSEOS[index];
+      selectedIndex = index;
+      const color = CAT_COLORS[m.cat] || "#e23b3b";
+      const maps = `https://www.google.com/maps/search/?api=1&query=${m.coords[0]},${m.coords[1]}`;
+      detailEl.innerHTML = `
+        <button class="back2" id="toList">← Volver a la lista</button>
+        <span class="d-tag" style="background:${color}">${m.cat}</span>
+        <h2>${m.nombre}</h2>
+        <p class="d-dist">📍 ${m.distrito}</p>
+        <p class="d-desc">${m.desc}</p>
+        <div class="d-meta">
+          <div><b>Categoría:</b> ${m.cat}</div>
+          <div><b>Distrito:</b> ${m.distrito}</div>
+          <div><b>Coordenadas:</b> ${m.coords[0].toFixed(4)}, ${m.coords[1].toFixed(4)}</div>
+        </div>
+        <a class="d-go" href="${maps}" target="_blank" rel="noopener">Cómo llegar →</a>
+      `;
+      document.getElementById("toList").onclick = backToList;
+      listEl.style.display = "none";
+      controlsEl.style.display = "none";
+      countEl.style.display = "none";
+      detailEl.style.display = "block";
+    }
+
+    function backToList() {
+      detailEl.style.display = "none";
+      listEl.style.display = "block";
+      if (inLima && selectedDistrict) {
+        controlsEl.style.display = "flex";
+        countEl.style.display = "block";
+      }
+      render();
+    }
+
+    function hideDetail() { detailEl.style.display = "none"; listEl.style.display = "block"; }
 
     /* ---------- Toast ---------- */
     let toastTimer;
