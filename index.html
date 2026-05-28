@@ -3,13 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Mapa interactivo · Perú → Lima → Distritos · Museos</title>
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-    crossorigin=""
-  />
+  <title>Mapa SVG · Perú → Lima → Distritos · Museos</title>
   <style>
     :root {
       --bg: #0f1722;
@@ -122,136 +116,83 @@
       font-weight: 600;
     }
     .card p { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.4; }
+
     /* Panel de detalle del museo */
     #detail { display: none; flex: 1; overflow-y: auto; padding: 16px 18px 24px; }
-    #detail .back2 {
-      background: none;
-      border: none;
-      color: var(--accent-2);
-      font-size: 13px;
-      cursor: pointer;
-      padding: 0 0 12px;
-    }
+    #detail .back2 { background: none; border: none; color: var(--accent-2); font-size: 13px; cursor: pointer; padding: 0 0 12px; }
     #detail .d-tag {
-      display: inline-block;
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.4px;
-      padding: 3px 9px;
-      border-radius: 6px;
-      color: #1a1200;
-      font-weight: 700;
+      display: inline-block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px;
+      padding: 3px 9px; border-radius: 6px; color: #1a1200; font-weight: 700;
     }
     #detail h2 { margin: 10px 0 6px; font-size: 19px; line-height: 1.3; }
     #detail .d-dist { margin: 0 0 16px; font-size: 13px; color: var(--accent-2); }
-
-    /* Galería de fotos (cuadrícula, abajo) */
-    #detail .d-gallery {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 8px;
-    }
-    #detail .d-gallery .d-photo,
-    #detail .d-gallery .d-ph {
-      width: 100%;
-      height: 120px;
-      border-radius: 10px;
-    }
+    #detail .d-gallery { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    #detail .d-gallery .d-photo, #detail .d-gallery .d-ph { width: 100%; height: 120px; border-radius: 10px; }
     #detail .d-photo { object-fit: cover; border: 1px solid var(--border); }
     #detail .d-ph {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-      color: rgba(255,255,255,.92);
-      font-size: 12.5px;
-      font-weight: 600;
-      border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center; text-align: center;
+      color: rgba(255,255,255,.92); font-size: 12.5px; font-weight: 600; border: 1px solid var(--border);
     }
-
-    /* Secciones */
     #detail .d-section { margin-bottom: 16px; }
-    #detail .d-section h4 {
-      margin: 0 0 6px;
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.6px;
-      color: var(--muted);
-    }
+    #detail .d-section h4 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
     #detail .d-desc { margin: 0; font-size: 14px; line-height: 1.6; color: var(--text); }
     #detail .d-meta { font-size: 12.5px; color: var(--muted); }
     #detail .d-meta div { margin-bottom: 6px; }
     #detail .d-meta b { color: var(--text); }
     #detail .d-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
     #detail .d-go {
-      display: inline-block;
-      padding: 10px 14px;
-      border-radius: 8px;
-      background: var(--accent);
-      color: #fff;
-      text-decoration: none;
-      font-size: 13.5px;
-      font-weight: 600;
+      display: inline-block; padding: 10px 14px; border-radius: 8px; background: var(--accent);
+      color: #fff; text-decoration: none; font-size: 13.5px; font-weight: 600;
     }
     #detail .d-go:hover { background: #c8302f; }
     #detail .d-web { background: var(--panel-2); border: 1px solid var(--border); color: var(--text); }
     #detail .d-web:hover { background: #243648; }
 
-    footer {
-      padding: 10px 18px;
-      font-size: 11px;
-      color: var(--muted);
-      border-top: 1px solid var(--border);
-    }
+    footer { padding: 10px 18px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); }
     footer a { color: var(--accent-2); text-decoration: none; }
 
-    #map { flex: 1; height: 100%; background: #0b1118; }
+    /* ---------- Mapa SVG ---------- */
+    #map { flex: 1; height: 100%; position: relative; background:
+        radial-gradient(1200px 800px at 60% 30%, #11202e 0%, #0b1118 70%); }
+    #pmap { width: 100%; height: 100%; display: block; }
+    #pmap path { vector-effect: non-scaling-stroke; cursor: pointer; outline: none; }
 
-    /* Quita el recuadro de foco al seleccionar una figura */
-    .leaflet-interactive:focus,
-    .leaflet-container path:focus,
-    path.leaflet-interactive:focus { outline: none !important; }
+    .dep { fill: #2a3a49; stroke: #56708a; stroke-width: 1; transition: fill .15s; }
+    .dep:hover { fill: #38506a; }
+    .dep.lima { fill: var(--accent-2); stroke: #ffd56b; stroke-width: 1.4; }
+    .dep.lima:hover { fill: #ffbe1f; }
 
-    .district-tip {
-      background: rgba(15,23,34,.92);
-      color: #fff;
-      border: 1px solid var(--border);
-      font-size: 12px;
-      font-weight: 600;
-      padding: 3px 8px;
+    .dist { fill: #2c3e50; stroke: #e23b3b; stroke-width: 1; transition: fill .15s; }
+    .dist:hover { fill: #3c5468; }
+    .dist.has { fill: #3a4b3f; stroke: #5fb27a; }      /* distrito con museos */
+    .dist.has:hover { fill: #4a6150; }
+    .dist.sel { fill: #7a2422; stroke: #ff6b5e; stroke-width: 1.6; }
+
+    .pin { cursor: pointer; }
+    .pin circle { stroke: #fff; stroke-width: 1.5; transition: r .12s; }
+    .pin:hover circle { stroke: #ffd56b; }
+
+    .maplabel {
+      position: absolute; left: 14px; top: 14px; pointer-events: none;
+      background: rgba(15,23,34,.9); border: 1px solid var(--border);
+      color: #fff; font-size: 13px; font-weight: 600; padding: 6px 12px;
+      border-radius: 8px; opacity: 0; transition: opacity .15s; max-width: 60%;
     }
-    .district-tip::before { display: none; }
-
-    .leaflet-popup-content { font-size: 13px; line-height: 1.45; }
-    .leaflet-popup-content h3 { margin: 0 0 4px; font-size: 15px; }
-    .leaflet-popup-content .pin-tag {
-      display: inline-block;
-      font-size: 10.5px;
-      text-transform: uppercase;
-      color: #fff;
-      padding: 1px 7px;
-      border-radius: 4px;
-      margin-bottom: 6px;
+    .maplabel.show { opacity: 1; }
+    .legend {
+      position: absolute; right: 14px; bottom: 14px; pointer-events: none;
+      background: rgba(15,23,34,.82); border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px 12px; font-size: 11.5px; color: var(--muted);
     }
-    .leaflet-popup-content a { color: #c0392b; }
+    .legend .row { display: flex; align-items: center; gap: 7px; margin-bottom: 4px; }
+    .legend .row:last-child { margin-bottom: 0; }
+    .legend .sw { width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(255,255,255,.35); }
 
     .toast {
-      position: absolute;
-      top: 14px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(15,23,34,.94);
-      color: #fff;
-      padding: 9px 16px;
-      border-radius: 999px;
-      font-size: 13px;
-      border: 1px solid var(--border);
-      z-index: 1000;
-      opacity: 0;
-      transition: opacity .25s;
-      pointer-events: none;
-      max-width: 80%;
-      text-align: center;
+      position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+      background: rgba(15,23,34,.94); color: #fff; padding: 9px 16px; border-radius: 999px;
+      font-size: 13px; border: 1px solid var(--border); z-index: 1000; opacity: 0;
+      transition: opacity .25s; pointer-events: none; max-width: 80%; text-align: center;
     }
     .toast.show { opacity: 1; }
 
@@ -270,7 +211,7 @@
     </header>
     <button class="backbtn" id="back">← Volver</button>
     <div class="hint" id="hint">
-      Vista general del <b>Perú</b> con los departamentos dibujados.<br><br>
+      Mapa <b>100% SVG</b> del Perú con sus departamentos.<br><br>
       👉 Haz clic sobre la <b>figura de Lima</b> (resaltada) para ver sus <b>distritos</b>.
     </div>
     <div class="controls" id="controls">
@@ -281,27 +222,23 @@
     <div id="list"></div>
     <div id="detail"></div>
     <footer>
-      Límites: <a href="https://github.com/juaneladio/peru-geojson" target="_blank" rel="noopener">peru-geojson</a> · Mapa © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OSM</a>/<a href="https://carto.com/" target="_blank" rel="noopener">CARTO</a>
+      Límites: <a href="https://github.com/juaneladio/peru-geojson" target="_blank" rel="noopener">peru-geojson</a> · render SVG propio
     </footer>
   </aside>
-  <div id="map"></div>
+
+  <div id="map">
+    <svg id="pmap" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg"></svg>
+    <div class="maplabel" id="maplabel"></div>
+    <div class="legend" id="legend"></div>
+  </div>
   <div class="toast" id="toast"></div>
 
-  <script
-    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-    crossorigin=""
-  ></script>
   <script>
-    /* ---------- Datos ---------- */
-    const PERU_VIEW = { center: [-9.8, -75.3], zoom: 5 };
-
-    // Fuente de límites geográficos (GeoJSON) — se cargan en el navegador.
+    /* ---------- Fuentes GeoJSON (se cargan en el navegador) ---------- */
     const GEO_DEP  = "https://raw.githubusercontent.com/juaneladio/peru-geojson/master/peru_departamental_simple.geojson";
     const GEO_DIST = "https://raw.githubusercontent.com/juaneladio/peru-geojson/master/peru_distrital_simple.geojson";
 
-    // Museos. 'nombdist' = nombre del distrito tal como aparece en el GeoJSON (NOMBDIST).
-    // 'fotos' admite URLs de imágenes; si fallan o están vacías se muestra un marco de foto.
+    /* ---------- Museos ---------- */
     const MUSEOS = [
       { nombre: "Museo de Arte de Lima (MALI)", distrito: "Cercado de Lima", nombdist: "LIMA", cat: "Arte", coords: [-12.0628, -77.0353],
         desc: "Principal museo de arte del país, con 3000 años de historia peruana en el Parque de la Exposición.",
@@ -385,117 +322,20 @@
       "Ciencia": "#2ecc71", "Comunitario": "#9b59b6"
     };
 
-    /* ---------- Utilidades ---------- */
-    function prop(p, keys) {
-      for (const k of keys) if (p && p[k] != null && p[k] !== "") return p[k];
-      return "";
-    }
+    /* ---------- Utilidades de propiedades GeoJSON ---------- */
+    function prop(p, keys) { for (const k of keys) if (p && p[k] != null && p[k] !== "") return p[k]; return ""; }
     const DEP_KEYS  = ["NOMBDEP", "FIRST_NOMB", "departamento", "NAME_1", "name"];
     const DIST_KEYS = ["NOMBDIST", "distrito", "NAME_3", "name"];
     const PROV_KEYS = ["NOMBPROV", "provincia", "NAME_2"];
     const norm = s => String(s).trim().toUpperCase();
 
-    /* ---------- Mapa (estilo limpio, sin detalles) ---------- */
-    const map = L.map("map", { zoomControl: true, minZoom: 4 })
-      .setView(PERU_VIEW.center, PERU_VIEW.zoom);
+    /* ---------- Render SVG ---------- */
+    const NS = "http://www.w3.org/2000/svg";
+    const VBW = 1000, VBH = 1200, PAD = 40, PIN_BASE = 9;
+    const svg = document.getElementById("pmap");
+    const labelEl = document.getElementById("maplabel");
 
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-      maxZoom: 19, subdomains: "abcd", attribution: '© OpenStreetMap · © CARTO'
-    }).addTo(map);
-
-    const depLayer    = L.layerGroup().addTo(map);  // departamentos (vista Perú)
-    const distLayer   = L.layerGroup();             // distritos de Lima
-    const museosLayer = L.layerGroup();             // marcadores de museos
-
-    /* ---------- Marcadores de museos ---------- */
-    function makeIcon(color) {
-      return L.divIcon({
-        className: "",
-        html: `<div style="background:${color};width:18px;height:18px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5)"></div>`,
-        iconSize: [22, 22], iconAnchor: [11, 22], popupAnchor: [0, -20]
-      });
-    }
-    const markers = [];
-    MUSEOS.forEach((m, i) => {
-      const color = CAT_COLORS[m.cat] || "#e23b3b";
-      const marker = L.marker(m.coords, { icon: makeIcon(color) });
-      marker.bindPopup(`
-        <span class="pin-tag" style="background:${color}">${m.cat}</span>
-        <h3>${m.nombre}</h3>
-        <p style="margin:0 0 6px;color:#555">${m.distrito}</p>
-        <p style="margin:0">${m.desc}</p>
-        <p style="margin:6px 0 0"><a href="https://www.google.com/maps/search/?api=1&query=${m.coords[0]},${m.coords[1]}" target="_blank" rel="noopener">Cómo llegar →</a></p>
-      `);
-      marker.on("click", () => showDetail(i));
-      markers.push({ data: m, marker, index: i });
-    });
-
-    /* ---------- Carga de límites geográficos ---------- */
-    let limaDepFeature = null;
-    let limaBounds = null;
-    let distGeoReady = false;
-
-    // Departamentos: dibuja todos, resalta Lima; clic en la figura de Lima -> distritos.
-    fetch(GEO_DEP)
-      .then(r => r.json())
-      .then(gj => {
-        L.geoJSON(gj, {
-          style: f => {
-            const isLima = norm(prop(f.properties, DEP_KEYS)) === "LIMA";
-            return isLima
-              ? { color: "#b07d00", weight: 2, fillColor: "#f2a900", fillOpacity: 0.65 }
-              : { color: "#8aa0b5", weight: 1, fillColor: "#c3cedb", fillOpacity: 0.35 };
-          },
-          onEachFeature: (f, layer) => {
-            const name = prop(f.properties, DEP_KEYS);
-            const isLima = norm(name) === "LIMA";
-            layer.bindTooltip(name, { sticky: true, className: "district-tip" });
-            if (isLima) limaDepFeature = layer;
-            layer.on("click", (e) => {
-              L.DomEvent.stopPropagation(e);
-              if (isLima) enterLima();
-              else { map.flyToBounds(layer.getBounds(), { duration: 0.8 }); showToast(`${name}: aún sin museos cargados.`); }
-            });
-            layer.on("mouseover", () => layer.setStyle({ weight: 2.5 }));
-            layer.on("mouseout",  () => layer.setStyle({ weight: isLima ? 2 : 1 }));
-          }
-        }).addTo(depLayer);
-      })
-      .catch(() => showToast("No se pudieron cargar los límites del Perú (revisa tu conexión)."));
-
-    // Distritos de Lima (provincia Lima) + Callao opcional.
-    fetch(GEO_DIST)
-      .then(r => r.json())
-      .then(gj => {
-        const feats = gj.features.filter(f => norm(prop(f.properties, PROV_KEYS)) === "LIMA");
-        const fc = { type: "FeatureCollection", features: feats };
-        const gl = L.geoJSON(fc, {
-          style: { color: "#e23b3b", weight: 1, fillColor: "#e23b3b", fillOpacity: 0.12 },
-          onEachFeature: (f, layer) => {
-            const dname = prop(f.properties, DIST_KEYS);
-            const n = MUSEOS.filter(m => norm(m.nombdist) === norm(dname)).length;
-            layer.bindTooltip(`${dname}${n ? ` · ${n} museo${n > 1 ? "s" : ""}` : ""}`,
-              { sticky: true, className: "district-tip" });
-            layer.on("mouseover", () => layer.setStyle({ fillOpacity: 0.38, weight: 2 }));
-            layer.on("mouseout",  () => layer.setStyle({ fillOpacity: (norm(dname) === selectedDistrict ? 0.45 : 0.12), weight: 1 }));
-            layer.on("click", (e) => {
-              L.DomEvent.stopPropagation(e);
-              selectDistrict(norm(dname), dname, layer);
-            });
-            f._layerRef = layer;
-          }
-        });
-        gl.addTo(distLayer);
-        limaDistGeo = gl;
-        limaBounds = gl.getBounds();
-        distGeoReady = true;
-        if (inLima) map.flyToBounds(limaBounds, { duration: 0.9 });
-      })
-      .catch(() => showToast("No se pudieron cargar los distritos de Lima."));
-
-    let limaDistGeo = null;
-
-    /* ---------- Navegación ---------- */
+    /* ---------- Referencias del sidebar ---------- */
     const titleEl = document.getElementById("title");
     const subtitleEl = document.getElementById("subtitle");
     const hintEl = document.getElementById("hint");
@@ -504,77 +344,196 @@
     const backEl = document.getElementById("back");
     const listEl = document.getElementById("list");
     const detailEl = document.getElementById("detail");
-    let inLima = false;
-    let selectedDistrict = "";   // NOMBDIST en mayúsculas, "" = todos
 
-    const HINT_LIMA = "Estás en <b>Lima</b>. Haz clic en la <b>figura de un distrito</b> (p. ej. <b>SJM</b>) para ver sus museos.";
+    function svgEl(tag, attrs) {
+      const e = document.createElementNS(NS, tag);
+      for (const k in attrs) e.setAttribute(k, attrs[k]);
+      return e;
+    }
+    function titleNode(text) { const t = svgEl("title", {}); t.textContent = text; return t; }
 
-    function enterLima() {
-      if (inLima) return;
-      inLima = true;
-      hideDetail();
-      map.removeLayer(depLayer);
-      distLayer.addTo(map);
-      if (distGeoReady && limaBounds) map.flyToBounds(limaBounds, { duration: 0.9 });
-      else map.flyTo([-12.05, -77.02], 11, { duration: 0.9 });
-      titleEl.textContent = "🏛️ Lima · distritos";
-      subtitleEl.textContent = "Haz clic en la figura de un distrito (p. ej. SJM)";
-      hintEl.innerHTML = HINT_LIMA;
-      hintEl.style.display = "block";
-      controlsEl.style.display = "none";
-      countEl.style.display = "none";
-      backEl.style.display = "block";
-      listEl.innerHTML = "";
+    function eachCoord(features, fn) {
+      features.forEach(f => {
+        const g = f.geometry; if (!g) return;
+        const polys = g.type === "Polygon" ? [g.coordinates] : g.type === "MultiPolygon" ? g.coordinates : [];
+        polys.forEach(poly => poly.forEach(ring => ring.forEach(c => fn(c[0], c[1]))));
+      });
     }
 
-    function enterPeru() {
-      inLima = false;
-      selectedDistrict = "";
-      hideDetail();
-      map.removeLayer(distLayer);
-      map.removeLayer(museosLayer);
-      depLayer.addTo(map);
-      map.flyTo(PERU_VIEW.center, PERU_VIEW.zoom, { duration: 0.9 });
-      titleEl.textContent = "🇵🇪 Perú";
-      subtitleEl.textContent = "Haz clic sobre la figura de Lima en el mapa";
-      hintEl.style.display = "block";
-      controlsEl.style.display = "none";
-      countEl.style.display = "none";
-      backEl.style.display = "none";
-      listEl.innerHTML = "";
+    // Proyector equirectangular con corrección por latitud, ajustado para llenar el viewBox.
+    function makeProjector(features) {
+      let minLon = Infinity, maxLon = -Infinity, minLat = Infinity, maxLat = -Infinity;
+      eachCoord(features, (lon, lat) => {
+        if (lon < minLon) minLon = lon; if (lon > maxLon) maxLon = lon;
+        if (lat < minLat) minLat = lat; if (lat > maxLat) maxLat = lat;
+      });
+      const k = Math.cos(((minLat + maxLat) / 2) * Math.PI / 180);
+      const rx = lon => lon * k, ry = lat => -lat;
+      const rminx = rx(minLon), rmaxx = rx(maxLon), rminy = ry(maxLat), rmaxy = ry(minLat);
+      const rw = rmaxx - rminx, rh = rmaxy - rminy;
+      const s = Math.min((VBW - 2 * PAD) / rw, (VBH - 2 * PAD) / rh);
+      const ox = (VBW - s * rw) / 2 - s * rminx;
+      const oy = (VBH - s * rh) / 2 - s * rminy;
+      return c => [s * rx(c[0]) + ox, s * ry(c[1]) + oy];
     }
 
-    function selectDistrict(key, label, layer) {
-      hideDetail();
-      // toggle: si vuelves a clicar el mismo distrito, se deselecciona
-      selectedDistrict = (selectedDistrict === key) ? "" : key;
-      if (limaDistGeo) limaDistGeo.setStyle(f => ({
-        color: "#e23b3b", weight: 1, fillColor: "#e23b3b",
-        fillOpacity: norm(prop(f.properties, DIST_KEYS)) === selectedDistrict ? 0.45 : 0.12
+    function featurePath(f, proj) {
+      const g = f.geometry; if (!g) return "";
+      const polys = g.type === "Polygon" ? [g.coordinates] : g.type === "MultiPolygon" ? g.coordinates : [];
+      let d = "";
+      polys.forEach(poly => poly.forEach(ring => {
+        ring.forEach((c, i) => { const p = proj(c); d += (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1) + " "; });
+        d += "Z ";
       }));
+      return d;
+    }
+
+    /* ---------- Animación de viewBox (zoom) ---------- */
+    let curVB = { x: 0, y: 0, w: VBW, h: VBH };
+    function setVB(v) { svg.setAttribute("viewBox", `${v.x} ${v.y} ${v.w} ${v.h}`); updatePinSize(v.w); }
+    function animateVB(target, dur = 650) {
+      const start = { ...curVB }, t0 = performance.now();
+      const ease = x => 1 - Math.pow(1 - x, 3);
+      function step(now) {
+        const p = Math.min(1, (now - t0) / dur), e = ease(p);
+        const v = {
+          x: start.x + (target.x - start.x) * e, y: start.y + (target.y - start.y) * e,
+          w: start.w + (target.w - start.w) * e, h: start.h + (target.h - start.h) * e
+        };
+        setVB(v);
+        if (p < 1) requestAnimationFrame(step); else curVB = target;
+      }
+      curVB = start; requestAnimationFrame(step);
+    }
+    // Ajusta una caja al aspect ratio del viewBox, con margen.
+    function fitBox(bb, frac) {
+      const cx = bb.x + bb.width / 2, cy = bb.y + bb.height / 2;
+      let w = bb.width * (1 + frac * 2), h = bb.height * (1 + frac * 2);
+      const ar = VBW / VBH;
+      if (w / h > ar) h = w / ar; else w = h * ar;
+      return { x: cx - w / 2, y: cy - h / 2, w, h };
+    }
+    function updatePinSize(vbW) {
+      const r = (PIN_BASE * vbW / VBW).toFixed(2);
+      svg.querySelectorAll(".pin circle").forEach(c => c.setAttribute("r", r));
+    }
+
+    /* ---------- Estado y datos ---------- */
+    let depFeatures = [], distFeatures = [];
+    let distProj = null;
+    let distEls = {};   // key -> path element
+    let pins = [];      // { data, index, g, c }
+    let view = "peru";
+    let selectedDistrict = "";
+
+    /* ---------- Etiqueta flotante del mapa ---------- */
+    function setLabel(txt) { labelEl.textContent = txt; labelEl.classList.add("show"); }
+    function clearLabel() { labelEl.classList.remove("show"); }
+
+    /* ---------- Vista Perú ---------- */
+    function renderPeru() {
+      view = "peru"; selectedDistrict = "";
+      svg.innerHTML = "";
+      const proj = makeProjector(depFeatures);
+      depFeatures.forEach(f => {
+        const name = prop(f.properties, DEP_KEYS), isLima = norm(name) === "LIMA";
+        const p = svgEl("path", { d: featurePath(f, proj), class: "dep" + (isLima ? " lima" : ""), tabindex: "-1" });
+        p.appendChild(titleNode(name + (isLima ? " (clic para ver distritos)" : "")));
+        p.addEventListener("click", e => { e.stopPropagation(); isLima ? enterLima() : showToast(`${name}: aún sin museos cargados.`); });
+        p.addEventListener("mouseenter", () => setLabel(name));
+        p.addEventListener("mouseleave", clearLabel);
+        svg.appendChild(p);
+      });
+      curVB = { x: 0, y: 0, w: VBW, h: VBH };
+      svg.setAttribute("viewBox", `0 0 ${VBW} ${VBH}`);
+      setSidebar("peru");
+    }
+
+    /* ---------- Vista Lima (distritos) ---------- */
+    function enterLima() {
+      if (!distFeatures.length) { showToast("Aún cargando los distritos de Lima…"); return; }
+      view = "lima"; selectedDistrict = "";
+      hideDetail();
+      svg.innerHTML = "";
+      distProj = makeProjector(distFeatures);
+      distEls = {};
+      distFeatures.forEach(f => {
+        const name = prop(f.properties, DIST_KEYS), key = norm(name);
+        const n = MUSEOS.filter(m => norm(m.nombdist) === key).length;
+        const p = svgEl("path", { d: featurePath(f, distProj), class: "dist" + (n ? " has" : ""), tabindex: "-1" });
+        p.appendChild(titleNode(`${name}${n ? ` · ${n} museo${n > 1 ? "s" : ""}` : ""}`));
+        p.addEventListener("click", e => { e.stopPropagation(); selectDistrict(key, name); });
+        p.addEventListener("mouseenter", () => setLabel(`${name}${n ? ` · ${n} museo${n > 1 ? "s" : ""}` : ""}`));
+        p.addEventListener("mouseleave", clearLabel);
+        svg.appendChild(p);
+        distEls[key] = p;
+      });
+      // capa de pines (encima)
+      const pinG = svgEl("g", { id: "pinlayer" });
+      svg.appendChild(pinG);
+      pins = [];
+      MUSEOS.forEach((m, i) => {
+        const [x, y] = distProj(m.coords);
+        const g = svgEl("g", { class: "pin", transform: `translate(${x.toFixed(1)} ${y.toFixed(1)})` });
+        g.style.display = "none";
+        g.appendChild(svgEl("circle", { r: PIN_BASE, fill: CAT_COLORS[m.cat] || "#e23b3b" }));
+        g.appendChild(titleNode(m.nombre));
+        g.addEventListener("click", e => { e.stopPropagation(); showDetail(i); });
+        g.addEventListener("mouseenter", () => setLabel(m.nombre));
+        g.addEventListener("mouseleave", clearLabel);
+        pinG.appendChild(g);
+        pins.push({ data: m, index: i, g, c: g.firstChild });
+      });
+      animateVB({ x: 0, y: 0, w: VBW, h: VBH });
+      setSidebar("lima");
+    }
+
+    /* ---------- Selección de distrito (última capa: museos) ---------- */
+    function selectDistrict(key, label) {
+      hideDetail();
+      selectedDistrict = (selectedDistrict === key) ? "" : key;
+      Object.entries(distEls).forEach(([k, el]) => el.classList.toggle("sel", k === selectedDistrict));
       if (selectedDistrict) {
-        // Última capa: recién aquí se muestran los museos y sus detalles.
-        museosLayer.addTo(map);
-        if (layer) map.flyToBounds(layer.getBounds(), { duration: 0.8, maxZoom: 14 });
-        subtitleEl.textContent = `Distrito: ${label}`;
-        hintEl.style.display = "none";
-        controlsEl.style.display = "flex";
-        countEl.style.display = "block";
+        const bb = distEls[key].getBBox();
+        animateVB(fitBox(bb, 0.35));
+        setSidebar("distrito", label);
         render();
       } else {
-        // Volver a la capa de distritos: se ocultan museos y detalles.
-        map.removeLayer(museosLayer);
-        if (limaBounds) map.flyToBounds(limaBounds, { duration: 0.8 });
-        subtitleEl.textContent = "Haz clic en la figura de un distrito (p. ej. SJM)";
-        hintEl.innerHTML = HINT_LIMA;
-        hintEl.style.display = "block";
-        controlsEl.style.display = "none";
-        countEl.style.display = "none";
+        animateVB({ x: 0, y: 0, w: VBW, h: VBH });
+        setSidebar("lima");
+        pins.forEach(p => p.g.style.display = "none");
         listEl.innerHTML = "";
       }
     }
 
-    backEl.addEventListener("click", () => { if (selectedDistrict) selectDistrict(selectedDistrict, "", null); else enterPeru(); });
+    function enterPeru() { renderPeru(); }
+
+    /* ---------- Sidebar por estado ---------- */
+    const HINT_LIMA = "Estás en <b>Lima</b>. Haz clic en la <b>figura de un distrito</b> (los verdes tienen museos, p. ej. <b>SJM</b>).";
+    function setSidebar(state, label) {
+      if (state === "peru") {
+        titleEl.textContent = "🇵🇪 Perú";
+        subtitleEl.textContent = "Haz clic sobre la figura de Lima en el mapa";
+        hintEl.innerHTML = "Mapa <b>100% SVG</b> del Perú con sus departamentos.<br><br>👉 Haz clic sobre la <b>figura de Lima</b> (resaltada) para ver sus <b>distritos</b>.";
+        hintEl.style.display = "block";
+        controlsEl.style.display = "none"; countEl.style.display = "none";
+        backEl.style.display = "none"; listEl.innerHTML = "";
+      } else if (state === "lima") {
+        titleEl.textContent = "🏛️ Lima · distritos";
+        subtitleEl.textContent = "Haz clic en la figura de un distrito (p. ej. SJM)";
+        hintEl.innerHTML = HINT_LIMA; hintEl.style.display = "block";
+        controlsEl.style.display = "none"; countEl.style.display = "none";
+        backEl.style.display = "block"; listEl.innerHTML = "";
+      } else { // distrito
+        titleEl.textContent = "🏛️ " + label;
+        subtitleEl.textContent = "Museos del distrito";
+        hintEl.style.display = "none";
+        controlsEl.style.display = "flex"; countEl.style.display = "block";
+        backEl.style.display = "block";
+      }
+    }
+
+    backEl.addEventListener("click", () => { if (selectedDistrict) selectDistrict(selectedDistrict, ""); else enterPeru(); });
 
     /* ---------- Lista + filtros ---------- */
     const cats = [...new Set(MUSEOS.map(m => m.cat))];
@@ -600,37 +559,30 @@
       const q = searchEl.value.trim().toLowerCase();
       const matchCat = activeCat === "Todos" || m.cat === activeCat;
       const matchDist = !selectedDistrict || norm(m.nombdist) === selectedDistrict;
-      const matchQ = !q ||
-        m.nombre.toLowerCase().includes(q) ||
-        m.distrito.toLowerCase().includes(q) ||
-        m.desc.toLowerCase().includes(q);
+      const matchQ = !q || m.nombre.toLowerCase().includes(q) || m.distrito.toLowerCase().includes(q) || m.desc.toLowerCase().includes(q);
       return matchCat && matchDist && matchQ;
     }
 
     function render() {
-      if (!inLima || !selectedDistrict) return;
+      if (view !== "lima" || !selectedDistrict) { pins.forEach(p => p.g.style.display = "none"); listEl.innerHTML = ""; return; }
       listEl.innerHTML = "";
       let shown = 0;
-      markers.forEach(({ data, marker, index }) => {
+      pins.forEach(({ data, index, g }) => {
         if (visible(data)) {
-          marker.addTo(museosLayer);
+          g.style.display = "";
           shown++;
           const card = document.createElement("div");
           card.className = "card" + (selectedIndex === index ? " selected" : "");
           card.innerHTML = `
             <h3><span class="tag" style="background:${CAT_COLORS[data.cat]}">${data.cat}</span>${data.nombre}</h3>
             <p>${data.distrito} — ${data.desc}</p>`;
-          card.onclick = () => {
-            map.flyTo(data.coords, 15, { duration: 0.8 });
-            showDetail(index);
-          };
+          card.onclick = () => showDetail(index);
           listEl.appendChild(card);
         } else {
-          museosLayer.removeLayer(marker);
+          g.style.display = "none";
         }
       });
-      const ctx = selectedDistrict ? ` en este distrito` : "";
-      countEl.textContent = `${shown} museo${shown === 1 ? "" : "s"}${ctx}`;
+      countEl.textContent = `${shown} museo${shown === 1 ? "" : "s"} en este distrito`;
     }
     searchEl.addEventListener("input", render);
 
@@ -641,31 +593,21 @@
       const color = CAT_COLORS[m.cat] || "#e23b3b";
       const maps = `https://www.google.com/maps/search/?api=1&query=${m.coords[0]},${m.coords[1]}`;
 
-      // Galería: usa las fotos disponibles; rellena hasta 3 marcos.
       const fotos = (m.fotos && m.fotos.length) ? m.fotos.slice(0, 3) : [];
       const tiles = [];
       for (let k = 0; k < Math.max(fotos.length, 2); k++) {
         if (fotos[k]) tiles.push(`<img class="d-photo" src="${fotos[k]}" alt="${m.nombre}" loading="lazy">`);
         else tiles.push(`<div class="d-ph" style="background:linear-gradient(135deg, ${color}, #1d2c3d)"><span>📷<br>Foto referencial</span></div>`);
       }
-
-      const webBtn = m.web
-        ? `<a class="d-go d-web" href="${m.web}" target="_blank" rel="noopener">Sitio web ↗</a>`
-        : "";
+      const webBtn = m.web ? `<a class="d-go d-web" href="${m.web}" target="_blank" rel="noopener">Sitio web ↗</a>` : "";
 
       detailEl.innerHTML = `
         <button class="back2" id="toList">← Volver a la lista</button>
         <span class="d-tag" style="background:${color}">${m.cat}</span>
         <h2>${m.nombre}</h2>
         <p class="d-dist">📍 ${m.distrito}</p>
-
-        <div class="d-section">
-          <h4>Historia</h4>
-          <p class="d-desc">${m.historia || m.desc}</p>
-        </div>
-
-        <div class="d-section">
-          <h4>Datos</h4>
+        <div class="d-section"><h4>Historia</h4><p class="d-desc">${m.historia || m.desc}</p></div>
+        <div class="d-section"><h4>Datos</h4>
           <div class="d-meta">
             <div><b>Categoría:</b> ${m.cat}</div>
             <div><b>Fundación / época:</b> ${m.anio || "—"}</div>
@@ -674,19 +616,12 @@
             <div><b>Coordenadas:</b> ${m.coords[0].toFixed(4)}, ${m.coords[1].toFixed(4)}</div>
           </div>
         </div>
-
         <div class="d-actions">
           <a class="d-go" href="${maps}" target="_blank" rel="noopener">Cómo llegar →</a>
           ${webBtn}
         </div>
-
-        <div class="d-section">
-          <h4>Fotos</h4>
-          <div class="d-gallery">${tiles.join("")}</div>
-        </div>
+        <div class="d-section"><h4>Fotos</h4><div class="d-gallery">${tiles.join("")}</div></div>
       `;
-
-      // Si una foto no carga, se reemplaza por un marco con degradado.
       detailEl.querySelectorAll("img.d-photo").forEach(img => {
         img.onerror = () => {
           const ph = document.createElement("div");
@@ -696,7 +631,6 @@
           img.replaceWith(ph);
         };
       });
-
       document.getElementById("toList").onclick = backToList;
       listEl.style.display = "none";
       controlsEl.style.display = "none";
@@ -707,13 +641,9 @@
     function backToList() {
       detailEl.style.display = "none";
       listEl.style.display = "block";
-      if (inLima && selectedDistrict) {
-        controlsEl.style.display = "flex";
-        countEl.style.display = "block";
-      }
+      if (view === "lima" && selectedDistrict) { controlsEl.style.display = "flex"; countEl.style.display = "block"; }
       render();
     }
-
     function hideDetail() { detailEl.style.display = "none"; listEl.style.display = "block"; }
 
     /* ---------- Toast ---------- */
@@ -725,6 +655,25 @@
       clearTimeout(toastTimer);
       toastTimer = setTimeout(() => toastEl.classList.remove("show"), 2800);
     }
+
+    /* ---------- Leyenda ---------- */
+    document.getElementById("legend").innerHTML =
+      Object.entries(CAT_COLORS).map(([k, v]) =>
+        `<div class="row"><span class="sw" style="background:${v}"></span>${k}</div>`).join("");
+
+    /* ---------- Carga ---------- */
+    Promise.allSettled([
+      fetch(GEO_DEP).then(r => r.json()),
+      fetch(GEO_DIST).then(r => r.json())
+    ]).then(([dep, dist]) => {
+      if (dep.status !== "fulfilled") { showToast("No se pudo cargar el mapa del Perú (revisa tu conexión)."); return; }
+      depFeatures = dep.value.features;
+      distFeatures = (dist.status === "fulfilled")
+        ? dist.value.features.filter(f => norm(prop(f.properties, PROV_KEYS)) === "LIMA")
+        : [];
+      if (!distFeatures.length) showToast("No se cargaron los distritos de Lima; el zoom a distritos no estará disponible.");
+      renderPeru();
+    });
   </script>
 </body>
 </html>
