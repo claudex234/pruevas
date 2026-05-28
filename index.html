@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Mapa SVG · Perú → Lima → Distritos · Museos</title>
+  <title>Mapa SVG · Perú → Provincias → Distritos · Museos</title>
   <style>
     :root {
       --bg: #0f1722;
@@ -162,6 +162,12 @@
     .dep.lima { fill: var(--accent-2); stroke: #ffd56b; stroke-width: 1.4; }
     .dep.lima:hover { fill: #ffbe1f; }
 
+    .prov { fill: #2f4256; stroke: #f2a900; stroke-width: 1; transition: fill .15s; }
+    .prov:hover { fill: #3e5872; }
+    .prov.has { fill: #3a4b3f; stroke: #5fb27a; }       /* provincia con museos */
+    .prov.has:hover { fill: #4a6150; }
+    .prov.sel { fill: #6b5410; stroke: #ffd56b; stroke-width: 1.6; }
+
     .dist { fill: #2c3e50; stroke: #e23b3b; stroke-width: 1; transition: fill .15s; }
     .dist:hover { fill: #3c5468; }
     .dist.has { fill: #3a4b3f; stroke: #5fb27a; }      /* distrito con museos */
@@ -212,7 +218,7 @@
     <button class="backbtn" id="back">← Volver</button>
     <div class="hint" id="hint">
       Mapa <b>100% SVG</b> del Perú con sus departamentos.<br><br>
-      👉 Haz clic sobre la <b>figura de Lima</b> (resaltada) para ver sus <b>distritos</b>.
+      👉 Haz clic sobre la <b>figura de Lima</b> (resaltada) para ver sus <b>provincias</b>, luego un <b>distrito</b>.
     </div>
     <div class="controls" id="controls">
       <input id="search" type="search" placeholder="Buscar museo..." autocomplete="off" />
@@ -236,6 +242,7 @@
   <script>
     /* ---------- Fuentes GeoJSON (se cargan en el navegador) ---------- */
     const GEO_DEP  = "https://raw.githubusercontent.com/juaneladio/peru-geojson/master/peru_departamental_simple.geojson";
+    const GEO_PROV = "https://raw.githubusercontent.com/juaneladio/peru-geojson/master/peru_provincial_simple.geojson";
     const GEO_DIST = "https://raw.githubusercontent.com/juaneladio/peru-geojson/master/peru_distrital_simple.geojson";
 
     /* ---------- Museos ---------- */
@@ -316,6 +323,9 @@
         historia: "Conjunto de vestigios arqueológicos del cono sur de Lima que dan cuenta de la ocupación prehispánica de la zona, hoy puestos en valor con fines educativos para la comunidad de SJM.",
         fotos: [] }
     ];
+
+    // Todos los museos cargados pertenecen a la provincia de Lima.
+    MUSEOS.forEach(m => { if (!m.provincia) m.provincia = "LIMA"; });
 
     const CAT_COLORS = {
       "Arte": "#e23b3b", "Arqueología": "#f2a900", "Historia": "#3b82e2",
@@ -419,14 +429,17 @@
     }
 
     /* ---------- Estado y datos ---------- */
-    let depFeatures = [], distFeatures = [];
+    let depFeatures = [], provFeatures = [], distFeatures = [];
     let proj = null;                 // proyector compartido (basado en Perú)
-    let depG, distG, pinG;           // capas SVG
-    let distEls = {};                // key -> { el, bbox, key, name, n }
+    let depG, provG, distG, pinG;    // capas SVG
+    let provEls = {};                // key -> { el, bbox, key, name, n }
+    let distEls = {};                // key -> { el, bbox, key, name, n, provKey }
     let pins = [];                   // { data, index, g }
-    let limaBox = null;              // bbox proyectada de la provincia de Lima
-    let view = "peru";
-    let selectedDistrict = "";
+    let limaBox = null;              // bbox proyectada del departamento de Lima
+    let view = "peru";               // peru | depto | prov | distrito
+    let selectedProv = "";
+    let selectedDistrict = "";       // clave compuesta provincia|distrito
+    let selectedDistName = "";       // nombre del distrito (para emparejar museos)
     const FULL_VB = { x: 0, y: 0, w: VBW, h: VBH };
 
     /* ---------- Etiqueta flotante del mapa ---------- */
@@ -456,7 +469,7 @@
       depFeatures.forEach(f => {
         const name = prop(f.properties, DEP_KEYS), isLima = norm(name) === "LIMA";
         const p = svgEl("path", { d: featurePath(f, proj), class: "dep" + (isLima ? " lima" : ""), tabindex: "-1" });
-        p.appendChild(titleNode(name + (isLima ? " (clic para ver distritos)" : "")));
+        p.appendChild(titleNode(name + (isLima ? " (clic para ver provincias)" : "")));
         p.addEventListener("click", e => { e.stopPropagation(); isLima ? enterLima() : showToast(`${name}: aún sin museos cargados.`); });
         p.addEventListener("mouseenter", () => setLabel(name));
         p.addEventListener("mouseleave", clearLabel);
@@ -464,21 +477,42 @@
       });
       svg.appendChild(depG);
 
-      // Distritos de Lima (mismo proyector), ocultos al inicio
+      // Provincias del departamento de Lima (mismo proyector), ocultas al inicio
+      provG = svgEl("g", { id: "provlayer" });
+      provG.style.display = "none";
+      provEls = {};
+      provFeatures.forEach(f => {
+        const name = prop(f.properties, PROV_KEYS), key = norm(name);
+        const n = MUSEOS.filter(m => norm(m.provincia) === key).length;
+        const p = svgEl("path", { d: featurePath(f, proj), class: "prov" + (n ? " has" : ""), tabindex: "-1" });
+        const tip = `${name}${n ? ` · ${n} museo${n > 1 ? "s" : ""}` : ""}`;
+        p.appendChild(titleNode(tip));
+        p.addEventListener("click", e => { e.stopPropagation(); selectProvincia(key, name); });
+        p.addEventListener("mouseenter", () => setLabel(tip));
+        p.addEventListener("mouseleave", clearLabel);
+        provG.appendChild(p);
+        provEls[key] = { el: p, bbox: projectedBBox([f]), key, name, n };
+      });
+      svg.appendChild(provG);
+
+      // Distritos del departamento de Lima (mismo proyector), ocultos al inicio
       distG = svgEl("g", { id: "distlayer" });
       distG.style.display = "none";
       distEls = {};
       distFeatures.forEach(f => {
-        const name = prop(f.properties, DIST_KEYS), key = norm(name);
-        const n = MUSEOS.filter(m => norm(m.nombdist) === key).length;
+        const name = prop(f.properties, DIST_KEYS), distKey = norm(name);
+        const provKey = norm(prop(f.properties, PROV_KEYS));
+        const key = provKey + "|" + distKey;   // único aunque haya distritos homónimos
+        const n = MUSEOS.filter(m => norm(m.nombdist) === distKey && norm(m.provincia) === provKey).length;
         const p = svgEl("path", { d: featurePath(f, proj), class: "dist" + (n ? " has" : ""), tabindex: "-1" });
         const tip = `${name}${n ? ` · ${n} museo${n > 1 ? "s" : ""}` : ""}`;
         p.appendChild(titleNode(tip));
+        p.style.display = "none";
         p.addEventListener("click", e => { e.stopPropagation(); selectDistrict(key, name); });
         p.addEventListener("mouseenter", () => setLabel(tip));
         p.addEventListener("mouseleave", clearLabel);
         distG.appendChild(p);
-        distEls[key] = { el: p, bbox: projectedBBox([f]), key, name, n };
+        distEls[key] = { el: p, bbox: projectedBBox([f]), key, distKey, name, n, provKey };
       });
       svg.appendChild(distG);
 
@@ -499,66 +533,104 @@
       });
       svg.appendChild(pinG);
 
-      limaBox = distFeatures.length ? projectedBBox(distFeatures) : null;
+      limaBox = provFeatures.length ? projectedBBox(provFeatures) : null;
       curVB = { ...FULL_VB };
       setVB(FULL_VB);
       enterPeru();   // estado inicial
     }
 
-    /* ---------- Niveles (siempre con animación de viewBox) ---------- */
+    /* ---------- Niveles (siempre con animación de viewBox) ----------
+       Jerarquía: Perú (departamentos) → Lima (provincias) → provincia
+       (distritos) → distrito (museos). Cada salto es un zoom de viewBox. */
     function enterPeru() {
-      view = "peru"; selectedDistrict = "";
+      view = "peru"; selectedProv = ""; selectedDistrict = ""; selectedDistName = "";
       hideDetail();
+      if (provG) provG.style.display = "none";
       if (distG) distG.style.display = "none";
       pins.forEach(p => p.g.style.display = "none");
+      Object.values(provEls).forEach(d => d.el.classList.remove("sel"));
       Object.values(distEls).forEach(d => d.el.classList.remove("sel"));
       if (depG) depG.style.display = "";
       animateVB(FULL_VB);
       setSidebar("peru");
     }
 
+    // Perú → departamento de Lima: muestra sus provincias.
     function enterLima() {
-      if (!distFeatures.length || !limaBox) { showToast("Aún cargando los distritos de Lima…"); return; }
-      view = "lima"; selectedDistrict = "";
+      if (!provFeatures.length || !limaBox) { showToast("Aún cargando las provincias de Lima…"); return; }
+      view = "depto"; selectedProv = ""; selectedDistrict = ""; selectedDistName = "";
       hideDetail();
       depG.style.display = "none";
-      distG.style.display = "";
+      provG.style.display = "";
+      distG.style.display = "none";
       pins.forEach(p => p.g.style.display = "none");
-      Object.values(distEls).forEach(d => d.el.classList.remove("sel"));
-      animateVB(fitBox(limaBox, 0.10));     // ZOOM Perú → Lima
-      setSidebar("lima");
+      Object.values(provEls).forEach(d => d.el.classList.remove("sel"));
+      Object.values(distEls).forEach(d => { d.el.classList.remove("sel"); d.el.style.display = "none"; });
+      animateVB(fitBox(limaBox, 0.06));     // ZOOM Perú → Lima (provincias)
+      setSidebar("depto");
     }
 
+    // Departamento → provincia: muestra los distritos de esa provincia.
+    function selectProvincia(key, label) {
+      hideDetail();
+      selectedProv = (selectedProv === key) ? "" : key;
+      selectedDistrict = ""; selectedDistName = "";
+      Object.values(provEls).forEach(d => d.el.classList.toggle("sel", d.key === selectedProv));
+      Object.values(distEls).forEach(d => d.el.classList.remove("sel"));
+      pins.forEach(p => p.g.style.display = "none");
+      listEl.innerHTML = "";
+      if (selectedProv) {
+        view = "prov";
+        distG.style.display = "";
+        Object.values(distEls).forEach(d => { d.el.style.display = (d.provKey === selectedProv) ? "" : "none"; });
+        animateVB(fitBox(provEls[key].bbox, 0.10));   // ZOOM Lima → provincia
+        setSidebar("prov", label);
+      } else {
+        enterLima();   // deseleccionar → regresa a las provincias
+      }
+    }
+
+    // Provincia → distrito: muestra los museos del distrito.
     function selectDistrict(key, label) {
       hideDetail();
       selectedDistrict = (selectedDistrict === key) ? "" : key;
+      selectedDistName = selectedDistrict ? distEls[key].distKey : "";
       Object.values(distEls).forEach(d => d.el.classList.toggle("sel", d.key === selectedDistrict));
       if (selectedDistrict) {
-        animateVB(fitBox(distEls[key].bbox, 0.35));   // ZOOM Lima → distrito
+        view = "distrito";
+        animateVB(fitBox(distEls[key].bbox, 0.35));   // ZOOM provincia → distrito
         setSidebar("distrito", label);
         render();
       } else {
-        animateVB(fitBox(limaBox, 0.10));             // regresa a Lima
-        setSidebar("lima");
+        view = "prov";
+        animateVB(fitBox(provEls[selectedProv].bbox, 0.10));   // regresa a la provincia
+        setSidebar("prov", provEls[selectedProv].name);
         pins.forEach(p => p.g.style.display = "none");
         listEl.innerHTML = "";
       }
     }
 
     /* ---------- Sidebar por estado ---------- */
-    const HINT_LIMA = "Estás en <b>Lima</b>. Haz clic en la <b>figura de un distrito</b> (los verdes tienen museos, p. ej. <b>SJM</b>).";
     function setSidebar(state, label) {
       if (state === "peru") {
         titleEl.textContent = "🇵🇪 Perú";
         subtitleEl.textContent = "Haz clic sobre la figura de Lima en el mapa";
-        hintEl.innerHTML = "Mapa <b>100% SVG</b> del Perú con sus departamentos.<br><br>👉 Haz clic sobre la <b>figura de Lima</b> (resaltada) para ver sus <b>distritos</b>.";
+        hintEl.innerHTML = "Mapa <b>100% SVG</b> del Perú con sus departamentos.<br><br>👉 Haz clic sobre la <b>figura de Lima</b> (resaltada) para ver sus <b>provincias</b>.";
         hintEl.style.display = "block";
         controlsEl.style.display = "none"; countEl.style.display = "none";
         backEl.style.display = "none"; listEl.innerHTML = "";
-      } else if (state === "lima") {
-        titleEl.textContent = "🏛️ Lima · distritos";
-        subtitleEl.textContent = "Haz clic en la figura de un distrito (p. ej. SJM)";
-        hintEl.innerHTML = HINT_LIMA; hintEl.style.display = "block";
+      } else if (state === "depto") {
+        titleEl.textContent = "🗺️ Lima · provincias";
+        subtitleEl.textContent = "Haz clic en una provincia (p. ej. Lima)";
+        hintEl.innerHTML = "Estás en el <b>departamento de Lima</b>. Haz clic en la <b>figura de una provincia</b> (las verdes tienen museos) para ver sus <b>distritos</b>.";
+        hintEl.style.display = "block";
+        controlsEl.style.display = "none"; countEl.style.display = "none";
+        backEl.style.display = "block"; listEl.innerHTML = "";
+      } else if (state === "prov") {
+        titleEl.textContent = "🏙️ " + label + " · distritos";
+        subtitleEl.textContent = "Haz clic en la figura de un distrito";
+        hintEl.innerHTML = "Provincia de <b>" + label + "</b>. Haz clic en un <b>distrito</b> (los verdes tienen museos) para ver sus museos.";
+        hintEl.style.display = "block";
         controlsEl.style.display = "none"; countEl.style.display = "none";
         backEl.style.display = "block"; listEl.innerHTML = "";
       } else { // distrito
@@ -570,7 +642,11 @@
       }
     }
 
-    backEl.addEventListener("click", () => { if (selectedDistrict) selectDistrict(selectedDistrict, ""); else enterPeru(); });
+    backEl.addEventListener("click", () => {
+      if (selectedDistrict) selectDistrict(selectedDistrict, "");
+      else if (selectedProv) selectProvincia(selectedProv, "");
+      else enterPeru();
+    });
 
     /* ---------- Lista + filtros ---------- */
     const cats = [...new Set(MUSEOS.map(m => m.cat))];
@@ -595,13 +671,13 @@
     function visible(m) {
       const q = searchEl.value.trim().toLowerCase();
       const matchCat = activeCat === "Todos" || m.cat === activeCat;
-      const matchDist = !selectedDistrict || norm(m.nombdist) === selectedDistrict;
+      const matchDist = !selectedDistrict || (norm(m.nombdist) === selectedDistName && norm(m.provincia) === selectedProv);
       const matchQ = !q || m.nombre.toLowerCase().includes(q) || m.distrito.toLowerCase().includes(q) || m.desc.toLowerCase().includes(q);
       return matchCat && matchDist && matchQ;
     }
 
     function render() {
-      if (view !== "lima" || !selectedDistrict) { pins.forEach(p => p.g.style.display = "none"); listEl.innerHTML = ""; return; }
+      if (view !== "distrito" || !selectedDistrict) { pins.forEach(p => p.g.style.display = "none"); listEl.innerHTML = ""; return; }
       listEl.innerHTML = "";
       let shown = 0;
       pins.forEach(({ data, index, g }) => {
@@ -678,7 +754,7 @@
     function backToList() {
       detailEl.style.display = "none";
       listEl.style.display = "block";
-      if (view === "lima" && selectedDistrict) { controlsEl.style.display = "flex"; countEl.style.display = "block"; }
+      if (view === "distrito" && selectedDistrict) { controlsEl.style.display = "flex"; countEl.style.display = "block"; }
       render();
     }
     function hideDetail() { detailEl.style.display = "none"; listEl.style.display = "block"; }
@@ -701,14 +777,18 @@
     /* ---------- Carga ---------- */
     Promise.allSettled([
       fetch(GEO_DEP).then(r => r.json()),
+      fetch(GEO_PROV).then(r => r.json()),
       fetch(GEO_DIST).then(r => r.json())
-    ]).then(([dep, dist]) => {
+    ]).then(([dep, prov, dist]) => {
       if (dep.status !== "fulfilled") { showToast("No se pudo cargar el mapa del Perú (revisa tu conexión)."); return; }
       depFeatures = dep.value.features;
-      distFeatures = (dist.status === "fulfilled")
-        ? dist.value.features.filter(f => norm(prop(f.properties, PROV_KEYS)) === "LIMA")
+      provFeatures = (prov.status === "fulfilled")
+        ? prov.value.features.filter(f => norm(prop(f.properties, DEP_KEYS)) === "LIMA")
         : [];
-      if (!distFeatures.length) showToast("No se cargaron los distritos de Lima; el zoom a distritos no estará disponible.");
+      distFeatures = (dist.status === "fulfilled")
+        ? dist.value.features.filter(f => norm(prop(f.properties, DEP_KEYS)) === "LIMA")
+        : [];
+      if (!provFeatures.length) showToast("No se cargaron las provincias de Lima; el zoom por niveles no estará disponible.");
       buildMap();
     });
   </script>
