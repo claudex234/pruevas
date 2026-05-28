@@ -132,6 +132,11 @@
 
     #map { flex: 1; height: 100%; background: #0b1118; }
 
+    /* Quita el recuadro de foco al seleccionar una figura */
+    .leaflet-interactive:focus,
+    .leaflet-container path:focus,
+    path.leaflet-interactive:focus { outline: none !important; }
+
     .district-tip {
       background: rgba(15,23,34,.92);
       color: #fff;
@@ -363,22 +368,23 @@
     let inLima = false;
     let selectedDistrict = "";   // NOMBDIST en mayúsculas, "" = todos
 
+    const HINT_LIMA = "Estás en <b>Lima</b>. Haz clic en la <b>figura de un distrito</b> (p. ej. <b>SJM</b>) para ver sus museos.";
+
     function enterLima() {
       if (inLima) return;
       inLima = true;
       map.removeLayer(depLayer);
       distLayer.addTo(map);
-      museosLayer.addTo(map);
-      markers.forEach(({ marker }) => marker.addTo(museosLayer));
       if (distGeoReady && limaBounds) map.flyToBounds(limaBounds, { duration: 0.9 });
       else map.flyTo([-12.05, -77.02], 11, { duration: 0.9 });
       titleEl.textContent = "🏛️ Lima · distritos";
       subtitleEl.textContent = "Haz clic en la figura de un distrito (p. ej. SJM)";
-      hintEl.style.display = "none";
-      controlsEl.style.display = "flex";
-      countEl.style.display = "block";
+      hintEl.innerHTML = HINT_LIMA;
+      hintEl.style.display = "block";
+      controlsEl.style.display = "none";
+      countEl.style.display = "none";
       backEl.style.display = "block";
-      render();
+      listEl.innerHTML = "";
     }
 
     function enterPeru() {
@@ -404,10 +410,26 @@
         color: "#e23b3b", weight: 1, fillColor: "#e23b3b",
         fillOpacity: norm(prop(f.properties, DIST_KEYS)) === selectedDistrict ? 0.45 : 0.12
       }));
-      if (selectedDistrict && layer) map.flyToBounds(layer.getBounds(), { duration: 0.8, maxZoom: 14 });
-      else if (limaBounds) map.flyToBounds(limaBounds, { duration: 0.8 });
-      subtitleEl.textContent = selectedDistrict ? `Distrito: ${label}` : "Haz clic en la figura de un distrito (p. ej. SJM)";
-      render();
+      if (selectedDistrict) {
+        // Última capa: recién aquí se muestran los museos y sus detalles.
+        museosLayer.addTo(map);
+        if (layer) map.flyToBounds(layer.getBounds(), { duration: 0.8, maxZoom: 14 });
+        subtitleEl.textContent = `Distrito: ${label}`;
+        hintEl.style.display = "none";
+        controlsEl.style.display = "flex";
+        countEl.style.display = "block";
+        render();
+      } else {
+        // Volver a la capa de distritos: se ocultan museos y detalles.
+        map.removeLayer(museosLayer);
+        if (limaBounds) map.flyToBounds(limaBounds, { duration: 0.8 });
+        subtitleEl.textContent = "Haz clic en la figura de un distrito (p. ej. SJM)";
+        hintEl.innerHTML = HINT_LIMA;
+        hintEl.style.display = "block";
+        controlsEl.style.display = "none";
+        countEl.style.display = "none";
+        listEl.innerHTML = "";
+      }
     }
 
     backEl.addEventListener("click", () => { if (selectedDistrict) selectDistrict(selectedDistrict, "", null); else enterPeru(); });
@@ -444,7 +466,7 @@
     }
 
     function render() {
-      if (!inLima) return;
+      if (!inLima || !selectedDistrict) return;
       listEl.innerHTML = "";
       let shown = 0;
       markers.forEach(({ data, marker, index }) => {
