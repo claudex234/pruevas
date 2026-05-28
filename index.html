@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mapa interactivo de museos · Lima, Perú</title>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+  <style>
+    :root {
+      --bg: #0f1722;
+      --panel: #16212e;
+      --panel-2: #1d2c3d;
+      --accent: #e23b3b;
+      --accent-2: #f2a900;
+      --text: #e8eef5;
+      --muted: #93a4b6;
+      --border: #26384c;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Sidebar */
+    #sidebar {
+      width: 340px;
+      min-width: 340px;
+      background: var(--panel);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+    #sidebar header {
+      padding: 18px 18px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    #sidebar header h1 {
+      margin: 0;
+      font-size: 18px;
+      letter-spacing: 0.3px;
+    }
+    #sidebar header p {
+      margin: 6px 0 0;
+      font-size: 12.5px;
+      color: var(--muted);
+    }
+    .controls {
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .controls input[type="search"] {
+      width: 100%;
+      padding: 9px 11px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--panel-2);
+      color: var(--text);
+      font-size: 14px;
+      outline: none;
+    }
+    .controls input[type="search"]:focus { border-color: var(--accent-2); }
+    .filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .chip {
+      font-size: 12px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .chip.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .count {
+      font-size: 12px;
+      color: var(--muted);
+      padding: 8px 18px 0;
+    }
+    #list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 10px 18px;
+    }
+    .card {
+      padding: 11px 12px;
+      border-radius: 10px;
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: background 0.12s, border-color 0.12s;
+    }
+    .card:hover { background: var(--panel-2); }
+    .card.selected { background: var(--panel-2); border-color: var(--accent-2); }
+    .card h3 {
+      margin: 0 0 3px;
+      font-size: 14.5px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+    .card .tag {
+      font-size: 10.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      padding: 2px 7px;
+      border-radius: 5px;
+      background: var(--accent-2);
+      color: #1a1200;
+      font-weight: 600;
+    }
+    .card p {
+      margin: 0;
+      font-size: 12.5px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+    footer {
+      padding: 10px 18px;
+      font-size: 11px;
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+    }
+    footer a { color: var(--accent-2); text-decoration: none; }
+
+    /* Map */
+    #map { flex: 1; height: 100%; }
+
+    .leaflet-popup-content { font-size: 13px; line-height: 1.45; }
+    .leaflet-popup-content h3 { margin: 0 0 4px; font-size: 15px; }
+    .leaflet-popup-content .pin-tag {
+      display: inline-block;
+      font-size: 10.5px;
+      text-transform: uppercase;
+      background: #e23b3b;
+      color: #fff;
+      padding: 1px 7px;
+      border-radius: 4px;
+      margin-bottom: 6px;
+    }
+    .leaflet-popup-content a { color: #c0392b; }
+
+    /* Mobile */
+    @media (max-width: 760px) {
+      body { flex-direction: column; }
+      #sidebar { width: 100%; min-width: 0; height: 45%; }
+      #map { height: 55%; }
+    }
+  </style>
+</head>
+<body>
+  <aside id="sidebar">
+    <header>
+      <h1>🏛️ Museos de Lima</h1>
+      <p>Mapa interactivo · Perú · Lima Metropolitana (incl. SJM)</p>
+    </header>
+    <div class="controls">
+      <input id="search" type="search" placeholder="Buscar museo..." autocomplete="off" />
+      <div class="filters" id="filters"></div>
+    </div>
+    <div class="count" id="count"></div>
+    <div id="list"></div>
+    <footer>
+      Datos de referencia · Mapa © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>
+    </footer>
+  </aside>
+  <div id="map"></div>
+
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+  <script>
+    // Museos de Lima Metropolitana. Coordenadas aproximadas (lat, lng).
+    const MUSEOS = [
+      {
+        nombre: "Museo de Arte de Lima (MALI)",
+        distrito: "Cercado de Lima",
+        cat: "Arte",
+        coords: [-12.0628, -77.0353],
+        desc: "Principal museo de arte del país, con 3000 años de historia peruana en el Parque de la Exposición."
+      },
+      {
+        nombre: "Museo Nacional de Arqueología, Antropología e Historia",
+        distrito: "Pueblo Libre",
+        cat: "Historia",
+        coords: [-12.0723, -77.0639],
+        desc: "El museo estatal más antiguo del Perú (1822). Colecciones precolombinas y la Estela de Raimondi."
+      },
+      {
+        nombre: "Museo Larco",
+        distrito: "Pueblo Libre",
+        cat: "Arqueología",
+        coords: [-12.0716, -77.0703],
+        desc: "Casona virreinal con cerámica precolombina y la famosa sala de arte erótico mochica."
+      },
+      {
+        nombre: "Museo de la Nación",
+        distrito: "San Borja",
+        cat: "Historia",
+        coords: [-12.0905, -76.9947],
+        desc: "Gran recinto con muestras sobre culturas peruanas y el Lugar de la Memoria."
+      },
+      {
+        nombre: "Museo de Sitio Pachacamac",
+        distrito: "Lurín",
+        cat: "Arqueología",
+        coords: [-12.2266, -76.8987],
+        desc: "Santuario arqueológico prehispánico al sur de Lima, con templos y el Acllahuasi."
+      },
+      {
+        nombre: "Museo Pedro de Osma",
+        distrito: "Barranco",
+        cat: "Arte",
+        coords: [-12.1556, -77.0214],
+        desc: "Arte virreinal de la escuela cusqueña en una elegante mansión de Barranco."
+      },
+      {
+        nombre: "MATE - Museo Mario Testino",
+        distrito: "Barranco",
+        cat: "Arte",
+        coords: [-12.1471, -77.0211],
+        desc: "Fotografía contemporánea y la serie de retratos andinos 'Alta Moda'."
+      },
+      {
+        nombre: "Museo Andrés del Castillo",
+        distrito: "Cercado de Lima",
+        cat: "Arqueología",
+        coords: [-12.0476, -77.0331],
+        desc: "Minerales, cerámica Nasca y Chancay en una casona republicana del centro."
+      },
+      {
+        nombre: "Museo Metropolitano de Lima",
+        distrito: "Cercado de Lima",
+        cat: "Historia",
+        coords: [-12.0686, -77.0339],
+        desc: "Recorrido audiovisual e inmersivo por la historia de la ciudad de Lima."
+      },
+      {
+        nombre: "Museo de Oro del Perú",
+        distrito: "Surco",
+        cat: "Historia",
+        coords: [-12.1063, -76.9777],
+        desc: "Piezas de oro precolombino y una extensa colección de armas del mundo."
+      },
+      {
+        nombre: "Casa Museo José Carlos Mariátegui",
+        distrito: "Cercado de Lima",
+        cat: "Historia",
+        coords: [-12.0561, -77.0334],
+        desc: "Casa del pensador y escritor peruano, hoy centro cultural y de memoria."
+      },
+      {
+        nombre: "Museo de Sitio Huaca Pucllana",
+        distrito: "Miraflores",
+        cat: "Arqueología",
+        coords: [-12.1110, -77.0344],
+        desc: "Pirámide de adobe de la cultura Lima, en pleno corazón de Miraflores."
+      },
+      {
+        nombre: "Museo de Historia Natural (UNMSM)",
+        distrito: "Jesús María",
+        cat: "Ciencia",
+        coords: [-12.0599, -77.0470],
+        desc: "Biodiversidad peruana: fósiles, fauna y flora, de la Universidad de San Marcos."
+      },
+      {
+        nombre: "Centro Cultural / Museo de SJM",
+        distrito: "San Juan de Miraflores (SJM)",
+        cat: "Comunitario",
+        coords: [-12.1581, -76.9711],
+        desc: "Espacio cultural comunitario en el distrito de San Juan de Miraflores, sur de Lima."
+      },
+      {
+        nombre: "Museo de Sitio Pampa de Cuevas / Lurín-Sur",
+        distrito: "San Juan de Miraflores (SJM)",
+        cat: "Arqueología",
+        coords: [-12.1665, -76.9603],
+        desc: "Vestigios arqueológicos del cono sur limeño cercanos a SJM."
+      }
+    ];
+
+    const CAT_COLORS = {
+      "Arte": "#e23b3b",
+      "Arqueología": "#f2a900",
+      "Historia": "#3b82e2",
+      "Ciencia": "#2ecc71",
+      "Comunitario": "#9b59b6"
+    };
+
+    const map = L.map("map", { zoomControl: true }).setView([-12.09, -77.02], 11);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap'
+    }).addTo(map);
+
+    function makeIcon(color) {
+      return L.divIcon({
+        className: "",
+        html: `<div style="background:${color};width:18px;height:18px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5)"></div>`,
+        iconSize: [22, 22],
+        iconAnchor: [11, 22],
+        popupAnchor: [0, -20]
+      });
+    }
+
+    const markers = [];
+    MUSEOS.forEach((m, i) => {
+      const color = CAT_COLORS[m.cat] || "#e23b3b";
+      const marker = L.marker(m.coords, { icon: makeIcon(color) }).addTo(map);
+      marker.bindPopup(`
+        <span class="pin-tag" style="background:${color}">${m.cat}</span>
+        <h3>${m.nombre}</h3>
+        <p style="margin:0 0 6px;color:#555">${m.distrito}</p>
+        <p style="margin:0">${m.desc}</p>
+        <p style="margin:6px 0 0"><a href="https://www.google.com/maps/search/?api=1&query=${m.coords[0]},${m.coords[1]}" target="_blank" rel="noopener">Cómo llegar →</a></p>
+      `);
+      markers.push({ data: m, marker, index: i });
+    });
+
+    // Filters
+    const cats = [...new Set(MUSEOS.map(m => m.cat))];
+    let activeCat = "Todos";
+    const filtersEl = document.getElementById("filters");
+    ["Todos", ...cats].forEach(c => {
+      const b = document.createElement("button");
+      b.className = "chip" + (c === "Todos" ? " active" : "");
+      b.textContent = c;
+      b.onclick = () => {
+        activeCat = c;
+        document.querySelectorAll(".chip").forEach(x => x.classList.remove("active"));
+        b.classList.add("active");
+        render();
+      };
+      filtersEl.appendChild(b);
+    });
+
+    const listEl = document.getElementById("list");
+    const countEl = document.getElementById("count");
+    const searchEl = document.getElementById("search");
+    let selectedIndex = null;
+
+    function visible(m) {
+      const q = searchEl.value.trim().toLowerCase();
+      const matchCat = activeCat === "Todos" || m.cat === activeCat;
+      const matchQ = !q ||
+        m.nombre.toLowerCase().includes(q) ||
+        m.distrito.toLowerCase().includes(q) ||
+        m.desc.toLowerCase().includes(q);
+      return matchCat && matchQ;
+    }
+
+    function render() {
+      listEl.innerHTML = "";
+      let shown = 0;
+      markers.forEach(({ data, marker, index }) => {
+        if (visible(data)) {
+          marker.addTo(map);
+          shown++;
+          const card = document.createElement("div");
+          card.className = "card" + (selectedIndex === index ? " selected" : "");
+          card.innerHTML = `
+            <h3><span class="tag" style="background:${CAT_COLORS[data.cat]}">${data.cat}</span>${data.nombre}</h3>
+            <p>${data.distrito} — ${data.desc}</p>`;
+          card.onclick = () => {
+            selectedIndex = index;
+            map.flyTo(data.coords, 15, { duration: 0.8 });
+            marker.openPopup();
+            render();
+          };
+          listEl.appendChild(card);
+        } else {
+          map.removeLayer(marker);
+        }
+      });
+      countEl.textContent = `${shown} museo${shown === 1 ? "" : "s"} mostrado${shown === 1 ? "" : "s"}`;
+    }
+
+    searchEl.addEventListener("input", render);
+    render();
+  </script>
+</body>
+</html>
