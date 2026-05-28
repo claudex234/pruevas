@@ -3,6 +3,15 @@ using AntiRobo.Bot;
 using AntiRobo.Capture;
 using AntiRobo.Commands;
 
+// Instancia única: si ya hay otro matame.exe corriendo, salimos. Evita el
+// conflicto de dos procesos sondeando el mismo bot de Telegram a la vez.
+using var single = new Mutex(initiallyOwned: true, @"Global\AntiRobo_matame", out var isFirst);
+if (!isFirst)
+{
+    Console.WriteLine("Ya hay otra instancia de matame en ejecución. Saliendo.");
+    return 0;
+}
+
 // Título de ventana "matame" -> aparece así en Administrador de tareas (Apps),
 // y el proceso es matame.exe en la pestaña Detalles. Sin icono de bandeja.
 try { Console.Title = "matame"; } catch { /* sin consola interactiva */ }
