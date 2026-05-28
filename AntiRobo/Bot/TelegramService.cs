@@ -25,8 +25,7 @@ public sealed class TelegramService
 
     public async Task RunAsync(CancellationToken ct)
     {
-        var me = await _bot.GetMe(ct);
-        Console.WriteLine($"Bot conectado como @{me.Username}. Escuchando comandos del chat {_authorizedChatId}...");
+        await ConnectWithRetryAsync(ct);
 
         var options = new ReceiverOptions { AllowedUpdates = [UpdateType.Message] };
         _bot.StartReceiving(HandleUpdateAsync, HandleErrorAsync, options, ct);
@@ -38,6 +37,36 @@ public sealed class TelegramService
         catch (OperationCanceledException)
         {
             // cierre solicitado
+        }
+    }
+
+    /// <summary>
+    /// Espera a que haya internet. Si el PC arranca sin red (típico: el WiFi
+    /// aún no conectó), reintenta con espera creciente en vez de cerrarse.
+    /// </summary>
+    private async Task ConnectWithRetryAsync(CancellationToken ct)
+    {
+        var delay = TimeSpan.FromSeconds(5);
+        var maxDelay = TimeSpan.FromMinutes(2);
+
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                var me = await _bot.GetMe(ct);
+                Console.WriteLine($"Bot conectado como @{me.Username}. Escuchando comandos del chat {_authorizedChatId}...");
+                return;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Sin conexión ({ex.Message}). Reintentando en {delay.TotalSeconds:0}s...");
+                await Task.Delay(delay, ct);
+                delay = TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 2, maxDelay.TotalSeconds));
+            }
         }
     }
 
