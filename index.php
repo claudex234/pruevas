@@ -1,9 +1,21 @@
+<?php
+/**
+ * Visor de museos de Lima (Perú → provincias → distritos → museos).
+ *
+ * Esta página solo entrega la interfaz. Los DATOS (límites GeoJSON y la
+ * lista de museos) se piden a api.php, que los lee desde /data (carpeta
+ * bloqueada al acceso directo). Así el contenido no queda incrustado en
+ * el código fuente que ve el navegador.
+ */
+header('Content-Type: text/html; charset=utf-8');
+?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Mapa SVG · Perú → Provincias → Distritos · Museos</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f1722" />
+  <title>Visor de Museos · Perú → Provincias → Distritos</title>
   <style>
     :root {
       --bg: #0f1722;
@@ -14,6 +26,7 @@
       --text: #e8eef5;
       --muted: #93a4b6;
       --border: #26384c;
+      --safe-b: env(safe-area-inset-bottom, 0px);
     }
     * { box-sizing: border-box; }
     html, body { height: 100%; margin: 0; }
@@ -23,7 +36,9 @@
       color: var(--text);
       display: flex;
       height: 100vh;
+      height: 100dvh;
       overflow: hidden;
+      -webkit-tap-highlight-color: transparent;
     }
 
     #sidebar {
@@ -35,6 +50,7 @@
       flex-direction: column;
       height: 100%;
     }
+    .sheet-handle { display: none; }
     #sidebar header { padding: 18px 18px 14px; border-bottom: 1px solid var(--border); }
     #sidebar header h1 { margin: 0; font-size: 18px; letter-spacing: 0.3px; }
     #sidebar header p { margin: 6px 0 0; font-size: 12.5px; color: var(--muted); }
@@ -49,6 +65,7 @@
       font-size: 13px;
       cursor: pointer;
       display: none;
+      touch-action: manipulation;
     }
     .backbtn:hover { border-color: var(--accent-2); }
 
@@ -92,10 +109,11 @@
       color: var(--muted);
       cursor: pointer;
       transition: all 0.15s;
+      touch-action: manipulation;
     }
     .chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
     .count { font-size: 12px; color: var(--muted); padding: 8px 18px 0; display: none; }
-    #list { flex: 1; overflow-y: auto; padding: 8px 10px 18px; }
+    #list { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 8px 10px 18px; }
     .card {
       padding: 11px 12px;
       border-radius: 10px;
@@ -118,7 +136,7 @@
     .card p { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.4; }
 
     /* Panel de detalle del museo */
-    #detail { display: none; flex: 1; overflow-y: auto; padding: 16px 18px 24px; }
+    #detail { display: none; flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 16px 18px 24px; }
     #detail .back2 { background: none; border: none; color: var(--accent-2); font-size: 13px; cursor: pointer; padding: 0 0 12px; }
     #detail .d-tag {
       display: inline-block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px;
@@ -154,7 +172,7 @@
     /* ---------- Mapa SVG ---------- */
     #map { flex: 1; height: 100%; position: relative; background:
         radial-gradient(1200px 800px at 60% 30%, #11202e 0%, #0b1118 70%); }
-    #pmap { width: 100%; height: 100%; display: block; }
+    #pmap { width: 100%; height: 100%; display: block; touch-action: manipulation; }
     #pmap path { vector-effect: non-scaling-stroke; cursor: pointer; outline: none; }
 
     .dep { fill: #2a3a49; stroke: #56708a; stroke-width: 1; transition: fill .15s; }
@@ -202,23 +220,57 @@
     }
     .toast.show { opacity: 1; }
 
+    /* ---------- Celular: mapa a pantalla completa + hoja inferior ---------- */
     @media (max-width: 760px) {
       body { flex-direction: column; }
-      #sidebar { width: 100%; min-width: 0; height: 45%; }
-      #map { height: 55%; }
+      #map { position: fixed; inset: 0; height: 100%; width: 100%; }
+      .legend { display: none; }
+      .maplabel { font-size: 12px; max-width: 72%; }
+
+      #sidebar {
+        position: fixed; left: 0; right: 0; bottom: 0; top: auto;
+        width: 100%; min-width: 0; height: 82vh; height: 82dvh;
+        border-right: none; border-top: 1px solid var(--border);
+        border-radius: 18px 18px 0 0;
+        box-shadow: 0 -10px 30px rgba(0,0,0,.5);
+        transform: translateY(calc(100% - 152px - var(--safe-b)));  /* colapsada: asoma el encabezado */
+        transition: transform .32s cubic-bezier(.4,0,.2,1);
+        z-index: 600;
+        padding-bottom: var(--safe-b);
+      }
+      body.sheet-open #sidebar { transform: translateY(0); }
+
+      .sheet-handle {
+        display: flex; align-items: center; justify-content: center;
+        height: 24px; flex: 0 0 auto; cursor: pointer; touch-action: none;
+      }
+      .sheet-handle::before {
+        content: ""; width: 46px; height: 5px; border-radius: 999px; background: var(--border);
+      }
+      #sidebar header { padding: 4px 18px 12px; }
+      #sidebar header h1 { font-size: 17px; }
+
+      .backbtn { padding: 12px 14px; font-size: 14px; }
+      .controls input[type="search"] { font-size: 16px; }  /* evita el zoom de iOS al enfocar */
+      .chip { font-size: 13px; padding: 8px 13px; }
+      .card { padding: 14px 12px; }
+      .card h3 { font-size: 15.5px; }
+      .hint { font-size: 13.5px; }
+      footer { display: none; }
     }
   </style>
 </head>
 <body>
   <aside id="sidebar">
+    <div class="sheet-handle" id="sheet" title="Deslizar / tocar para abrir o cerrar"></div>
     <header>
       <h1 id="title">🇵🇪 Perú</h1>
-      <p id="subtitle">Haz clic sobre la figura de Lima en el mapa</p>
+      <p id="subtitle">Toca la figura de Lima en el mapa</p>
     </header>
     <button class="backbtn" id="back">← Volver</button>
     <div class="hint" id="hint">
-      Mapa <b>100% SVG</b> del Perú con sus departamentos.<br><br>
-      👉 Haz clic sobre la <b>figura de Lima</b> (resaltada) para ver sus <b>provincias</b>, luego un <b>distrito</b>.
+      Visor del Perú por niveles con <b>zoom</b>.<br><br>
+      👉 Toca la <b>figura de Lima</b> (resaltada) para ver sus <b>provincias</b>, luego un <b>distrito</b> y sus <b>museos</b>.
     </div>
     <div class="controls" id="controls">
       <input id="search" type="search" placeholder="Buscar museo..." autocomplete="off" />
@@ -228,7 +280,7 @@
     <div id="list"></div>
     <div id="detail"></div>
     <footer>
-      Límites: <a href="https://github.com/juaneladio/peru-geojson" target="_blank" rel="noopener">peru-geojson</a> · render SVG propio
+      Datos servidos desde el servidor (<code>api.php</code>) · render SVG propio
     </footer>
   </aside>
 
@@ -240,92 +292,11 @@
   <div class="toast" id="toast"></div>
 
   <script>
-    /* ---------- Fuentes GeoJSON (se cargan en el navegador) ---------- */
-    const GEO_DEP  = "https://raw.githubusercontent.com/juaneladio/peru-geojson/master/peru_departamental_simple.geojson";
-    const GEO_PROV = "https://raw.githubusercontent.com/juaneladio/peru-geojson/master/peru_provincial_simple.geojson";
-    const GEO_DIST = "https://raw.githubusercontent.com/juaneladio/peru-geojson/master/peru_distrital_simple.geojson";
+    /* ---------- Origen de datos (servidos por el backend) ---------- */
+    const API = "api.php";
 
-    /* ---------- Museos ---------- */
-    const MUSEOS = [
-      { nombre: "Museo de Arte de Lima (MALI)", distrito: "Cercado de Lima", nombdist: "LIMA", cat: "Arte", coords: [-12.0628, -77.0353],
-        desc: "Principal museo de arte del país, con 3000 años de historia peruana en el Parque de la Exposición.",
-        anio: "1961", horario: "Mar–Dom 10:00–18:00", direccion: "Paseo Colón 125, Parque de la Exposición", web: "https://www.mali.pe",
-        historia: "Funciona en el Palacio de la Exposición, edificio de 1872 de estilo ecléctico. Tras su restauración se convirtió en el principal museo de arte de Lima, con colección que abarca desde piezas precolombinas hasta arte contemporáneo.",
-        fotos: ["https://commons.wikimedia.org/wiki/Special:FilePath/Palacio%20de%20la%20Exposici%C3%B3n.jpg"] },
-      { nombre: "Museo Nacional de Arqueología, Antropología e Historia", distrito: "Pueblo Libre", nombdist: "PUEBLO LIBRE", cat: "Historia", coords: [-12.0723, -77.0639],
-        desc: "El museo estatal más antiguo del Perú (1822). Estela de Raimondi.",
-        anio: "1822", horario: "Mar–Dom 09:00–16:00", direccion: "Plaza Bolívar s/n, Pueblo Libre", web: "",
-        historia: "Es el museo estatal más antiguo del Perú, fundado por decreto de José de San Martín en 1822. Custodia íconos del patrimonio nacional como la Estela de Raimondi y el Obelisco Tello, en una casona ligada a los libertadores San Martín y Bolívar.",
-        fotos: [] },
-      { nombre: "Museo Larco", distrito: "Pueblo Libre", nombdist: "PUEBLO LIBRE", cat: "Arqueología", coords: [-12.0716, -77.0703],
-        desc: "Casona virreinal con cerámica precolombina y arte erótico mochica.",
-        anio: "1926", horario: "Lun–Dom 09:00–22:00", direccion: "Av. Simón Bolívar 1515, Pueblo Libre", web: "https://www.museolarco.org",
-        historia: "Fundado por Rafael Larco Hoyle en una mansión virreinal del siglo XVIII edificada sobre una pirámide precolombina. Reúne una de las mayores colecciones de arte mochica del mundo, incluida su célebre sala de arte erótico.",
-        fotos: ["https://commons.wikimedia.org/wiki/Special:FilePath/Museo%20Larco%20Herrera.jpg"] },
-      { nombre: "Museo de la Nación", distrito: "San Borja", nombdist: "SAN BORJA", cat: "Historia", coords: [-12.0905, -76.9947],
-        desc: "Muestras sobre culturas peruanas y el Lugar de la Memoria.",
-        anio: "1990", horario: "Mar–Dom 09:00–17:00", direccion: "Av. Javier Prado Este 2465, San Borja", web: "",
-        historia: "Ocupa un gran edificio brutalista de los años 70. Ha albergado muestras sobre las culturas del Perú y la exposición 'Yuyanapaq', memoria fotográfica del conflicto armado interno.",
-        fotos: [] },
-      { nombre: "Museo de Sitio Pachacamac", distrito: "Lurín", nombdist: "LURIN", cat: "Arqueología", coords: [-12.2266, -76.8987],
-        desc: "Santuario arqueológico prehispánico al sur de Lima.",
-        anio: "1965", horario: "Mar–Dom 09:00–16:00", direccion: "Antigua Panamericana Sur km 31.5, Lurín", web: "https://pachacamac.cultura.pe",
-        historia: "Pachacamac fue uno de los santuarios más importantes de la costa andina durante más de mil años, dedicado al dios del mismo nombre. El museo de sitio, renovado en 2016, exhibe el ídolo de Pachacamac y guía la visita a sus templos y al Acllahuasi.",
-        fotos: ["https://commons.wikimedia.org/wiki/Special:FilePath/Pachacamac.jpg"] },
-      { nombre: "Museo Pedro de Osma", distrito: "Barranco", nombdist: "BARRANCO", cat: "Arte", coords: [-12.1556, -77.0214],
-        desc: "Arte virreinal de la escuela cusqueña en una mansión de Barranco.",
-        anio: "1988", horario: "Mar–Dom 10:00–18:00", direccion: "Av. Pedro de Osma 423, Barranco", web: "https://museopedrodeosma.org",
-        historia: "Alberga la colección de arte virreinal de Pedro de Osma Gildemeister en una elegante mansión señorial de inicios del siglo XX. Destaca por su pintura de la escuela cusqueña, platería y mobiliario colonial.",
-        fotos: [] },
-      { nombre: "MATE - Museo Mario Testino", distrito: "Barranco", nombdist: "BARRANCO", cat: "Arte", coords: [-12.1471, -77.0211],
-        desc: "Fotografía contemporánea y la serie 'Alta Moda'.",
-        anio: "2012", horario: "Mar–Dom 10:00–19:00", direccion: "Av. Pedro de Osma 409, Barranco", web: "https://mate.pe",
-        historia: "Asociación cultural fundada por el fotógrafo peruano Mario Testino en una casona republicana restaurada. Exhibe su obra de moda y la serie 'Alta Moda', retratos de trajes tradicionales andinos.",
-        fotos: [] },
-      { nombre: "Museo Andrés del Castillo", distrito: "Cercado de Lima", nombdist: "LIMA", cat: "Arqueología", coords: [-12.0476, -77.0331],
-        desc: "Minerales, cerámica Nasca y Chancay en una casona republicana.",
-        anio: "2007", horario: "Mié–Lun 09:00–18:00", direccion: "Jr. de la Unión 1030, Cercado de Lima", web: "",
-        historia: "Ubicado en la Casa Belén, casona republicana del centro histórico. Combina una destacada colección de minerales peruanos con cerámica de las culturas Nasca y Chancay.",
-        fotos: [] },
-      { nombre: "Museo Metropolitano de Lima", distrito: "Cercado de Lima", nombdist: "LIMA", cat: "Historia", coords: [-12.0686, -77.0339],
-        desc: "Recorrido audiovisual e inmersivo por la historia de Lima.",
-        anio: "2010", horario: "Mar–Dom 09:00–17:00", direccion: "Parque de la Exposición, Cercado de Lima", web: "",
-        historia: "Museo de tecnología inmersiva que narra la historia de Lima desde su fundación hasta el siglo XX mediante proyecciones, hologramas y montajes audiovisuales.",
-        fotos: [] },
-      { nombre: "Museo de Oro del Perú", distrito: "Surco", nombdist: "SANTIAGO DE SURCO", cat: "Historia", coords: [-12.1063, -76.9777],
-        desc: "Oro precolombino y una extensa colección de armas.",
-        anio: "1968", horario: "Lun–Dom 10:30–18:00", direccion: "Jr. Alonso de Molina 1100, Monterrico, Surco", web: "https://museoroperu.com.pe",
-        historia: "Creado a partir de la colección privada de Miguel Mujica Gallo. Reúne piezas de oro y orfebrería precolombina junto a una enorme colección de armas y armaduras históricas del mundo.",
-        fotos: [] },
-      { nombre: "Casa Museo José Carlos Mariátegui", distrito: "Cercado de Lima", nombdist: "LIMA", cat: "Historia", coords: [-12.0561, -77.0334],
-        desc: "Casa del pensador peruano, hoy centro cultural.",
-        anio: "1980", horario: "Lun–Vie 09:00–17:00", direccion: "Jr. Washington 1946, Cercado de Lima", web: "",
-        historia: "Última residencia del pensador y escritor José Carlos Mariátegui, donde escribió parte de su obra y editó la revista Amauta. Hoy es casa museo y centro cultural dedicado a su legado.",
-        fotos: [] },
-      { nombre: "Museo de Sitio Huaca Pucllana", distrito: "Miraflores", nombdist: "MIRAFLORES", cat: "Arqueología", coords: [-12.1110, -77.0344],
-        desc: "Pirámide de adobe de la cultura Lima en Miraflores.",
-        anio: "1981", horario: "Mié–Lun 09:00–17:00", direccion: "Calle General Borgoño cuadra 8, Miraflores", web: "",
-        historia: "Gran pirámide ceremonial de adobe construida por la cultura Lima (200–700 d.C.). Rodeada hoy por la ciudad, conserva plazas y recintos, y ofrece visitas guiadas diurnas y nocturnas.",
-        fotos: ["https://commons.wikimedia.org/wiki/Special:FilePath/Huaca%20Pucllana.jpg"] },
-      { nombre: "Museo de Historia Natural (UNMSM)", distrito: "Jesús María", nombdist: "JESUS MARIA", cat: "Ciencia", coords: [-12.0599, -77.0470],
-        desc: "Biodiversidad peruana de la Universidad de San Marcos.",
-        anio: "1918", horario: "Lun–Vie 09:00–15:00", direccion: "Av. Arenales 1256, Jesús María", web: "https://museohn.unmsm.edu.pe",
-        historia: "Pertenece a la Universidad Nacional Mayor de San Marcos. Exhibe colecciones de zoología, botánica, paleontología y geología que documentan la enorme biodiversidad del Perú.",
-        fotos: [] },
-      { nombre: "Centro Cultural / Museo de SJM", distrito: "San Juan de Miraflores (SJM)", nombdist: "SAN JUAN DE MIRAFLORES", cat: "Comunitario", coords: [-12.1581, -76.9711],
-        desc: "Espacio cultural comunitario en San Juan de Miraflores, sur de Lima.",
-        anio: "—", horario: "Consultar", direccion: "San Juan de Miraflores, Lima Sur", web: "",
-        historia: "Espacio cultural comunitario del distrito de San Juan de Miraflores, surgido del trabajo vecinal del cono sur limeño. Difunde la memoria e identidad del distrito a través de muestras y actividades.",
-        fotos: [] },
-      { nombre: "Museo de Sitio Pampa de Cuevas / Lurín-Sur", distrito: "San Juan de Miraflores (SJM)", nombdist: "SAN JUAN DE MIRAFLORES", cat: "Arqueología", coords: [-12.1665, -76.9603],
-        desc: "Vestigios arqueológicos del cono sur cercanos a SJM.",
-        anio: "—", horario: "Consultar", direccion: "Cono sur de Lima, cerca de SJM", web: "",
-        historia: "Conjunto de vestigios arqueológicos del cono sur de Lima que dan cuenta de la ocupación prehispánica de la zona, hoy puestos en valor con fines educativos para la comunidad de SJM.",
-        fotos: [] }
-    ];
-
-    // Todos los museos cargados pertenecen a la provincia de Lima.
-    MUSEOS.forEach(m => { if (!m.provincia) m.provincia = "LIMA"; });
+    /* ---------- Museos (se cargan desde el servidor) ---------- */
+    let MUSEOS = [];
 
     const CAT_COLORS = {
       "Arte": "#e23b3b", "Arqueología": "#f2a900", "Historia": "#3b82e2",
@@ -442,6 +413,12 @@
     let selectedDistName = "";       // nombre del distrito (para emparejar museos)
     const FULL_VB = { x: 0, y: 0, w: VBW, h: VBH };
 
+    /* ---------- Hoja inferior (solo celular) ---------- */
+    const mqMobile = window.matchMedia("(max-width: 760px)");
+    function setSheet(open) { document.body.classList.toggle("sheet-open", open); }
+    document.getElementById("sheet").addEventListener("click", () =>
+      setSheet(!document.body.classList.contains("sheet-open")));
+
     /* ---------- Etiqueta flotante del mapa ---------- */
     function setLabel(txt) { labelEl.textContent = txt; labelEl.classList.add("show"); }
     function clearLabel() { labelEl.classList.remove("show"); }
@@ -459,7 +436,7 @@
 
     /* ---------- Construcción del mapa (una sola vez) ----------
        Todo comparte el MISMO sistema de coordenadas (proyector de Perú),
-       de modo que Perú→Lima→distrito son siempre animaciones de viewBox. */
+       de modo que Perú→Lima→provincia→distrito son animaciones de viewBox. */
     function buildMap() {
       svg.innerHTML = "";
       proj = makeProjector(depFeatures);
@@ -469,7 +446,7 @@
       depFeatures.forEach(f => {
         const name = prop(f.properties, DEP_KEYS), isLima = norm(name) === "LIMA";
         const p = svgEl("path", { d: featurePath(f, proj), class: "dep" + (isLima ? " lima" : ""), tabindex: "-1" });
-        p.appendChild(titleNode(name + (isLima ? " (clic para ver provincias)" : "")));
+        p.appendChild(titleNode(name + (isLima ? " (toca para ver provincias)" : "")));
         p.addEventListener("click", e => { e.stopPropagation(); isLima ? enterLima() : showToast(`${name}: aún sin museos cargados.`); });
         p.addEventListener("mouseenter", () => setLabel(name));
         p.addEventListener("mouseleave", clearLabel);
@@ -614,22 +591,22 @@
     function setSidebar(state, label) {
       if (state === "peru") {
         titleEl.textContent = "🇵🇪 Perú";
-        subtitleEl.textContent = "Haz clic sobre la figura de Lima en el mapa";
-        hintEl.innerHTML = "Mapa <b>100% SVG</b> del Perú con sus departamentos.<br><br>👉 Haz clic sobre la <b>figura de Lima</b> (resaltada) para ver sus <b>provincias</b>.";
+        subtitleEl.textContent = "Toca la figura de Lima en el mapa";
+        hintEl.innerHTML = "Visor del Perú por niveles con <b>zoom</b>.<br><br>👉 Toca la <b>figura de Lima</b> (resaltada) para ver sus <b>provincias</b>.";
         hintEl.style.display = "block";
         controlsEl.style.display = "none"; countEl.style.display = "none";
         backEl.style.display = "none"; listEl.innerHTML = "";
       } else if (state === "depto") {
         titleEl.textContent = "🗺️ Lima · provincias";
-        subtitleEl.textContent = "Haz clic en una provincia (p. ej. Lima)";
-        hintEl.innerHTML = "Estás en el <b>departamento de Lima</b>. Haz clic en la <b>figura de una provincia</b> (las verdes tienen museos) para ver sus <b>distritos</b>.";
+        subtitleEl.textContent = "Toca una provincia (p. ej. Lima)";
+        hintEl.innerHTML = "Estás en el <b>departamento de Lima</b>. Toca la <b>figura de una provincia</b> (las verdes tienen museos) para ver sus <b>distritos</b>.";
         hintEl.style.display = "block";
         controlsEl.style.display = "none"; countEl.style.display = "none";
         backEl.style.display = "block"; listEl.innerHTML = "";
       } else if (state === "prov") {
         titleEl.textContent = "🏙️ " + label + " · distritos";
-        subtitleEl.textContent = "Haz clic en la figura de un distrito";
-        hintEl.innerHTML = "Provincia de <b>" + label + "</b>. Haz clic en un <b>distrito</b> (los verdes tienen museos) para ver sus museos.";
+        subtitleEl.textContent = "Toca la figura de un distrito";
+        hintEl.innerHTML = "Provincia de <b>" + label + "</b>. Toca un <b>distrito</b> (los verdes tienen museos) para ver sus museos.";
         hintEl.style.display = "block";
         controlsEl.style.display = "none"; countEl.style.display = "none";
         backEl.style.display = "block"; listEl.innerHTML = "";
@@ -640,6 +617,8 @@
         controlsEl.style.display = "flex"; countEl.style.display = "block";
         backEl.style.display = "block";
       }
+      // En celular: abre la hoja al ver museos; la colapsa al navegar el mapa.
+      if (mqMobile.matches) setSheet(state === "distrito");
     }
 
     backEl.addEventListener("click", () => {
@@ -649,21 +628,24 @@
     });
 
     /* ---------- Lista + filtros ---------- */
-    const cats = [...new Set(MUSEOS.map(m => m.cat))];
     let activeCat = "Todos";
     const filtersEl = document.getElementById("filters");
-    ["Todos", ...cats].forEach(c => {
-      const b = document.createElement("button");
-      b.className = "chip" + (c === "Todos" ? " active" : "");
-      b.textContent = c;
-      b.onclick = () => {
-        activeCat = c;
-        document.querySelectorAll(".chip").forEach(x => x.classList.remove("active"));
-        b.classList.add("active");
-        render();
-      };
-      filtersEl.appendChild(b);
-    });
+    function buildFilters() {
+      const cats = [...new Set(MUSEOS.map(m => m.cat))];
+      filtersEl.innerHTML = "";
+      ["Todos", ...cats].forEach(c => {
+        const b = document.createElement("button");
+        b.className = "chip" + (c === "Todos" ? " active" : "");
+        b.textContent = c;
+        b.onclick = () => {
+          activeCat = c;
+          document.querySelectorAll(".chip").forEach(x => x.classList.remove("active"));
+          b.classList.add("active");
+          render();
+        };
+        filtersEl.appendChild(b);
+      });
+    }
 
     const searchEl = document.getElementById("search");
     let selectedIndex = null;
@@ -749,6 +731,7 @@
       controlsEl.style.display = "none";
       countEl.style.display = "none";
       detailEl.style.display = "block";
+      if (mqMobile.matches) setSheet(true);   // en celular, abre la hoja para leer el detalle
     }
 
     function backToList() {
@@ -774,23 +757,30 @@
       Object.entries(CAT_COLORS).map(([k, v]) =>
         `<div class="row"><span class="sw" style="background:${v}"></span>${k}</div>`).join("");
 
-    /* ---------- Carga ---------- */
-    Promise.allSettled([
-      fetch(GEO_DEP).then(r => r.json()),
-      fetch(GEO_PROV).then(r => r.json()),
-      fetch(GEO_DIST).then(r => r.json())
-    ]).then(([dep, prov, dist]) => {
-      if (dep.status !== "fulfilled") { showToast("No se pudo cargar el mapa del Perú (revisa tu conexión)."); return; }
-      depFeatures = dep.value.features;
-      provFeatures = (prov.status === "fulfilled")
-        ? prov.value.features.filter(f => norm(prop(f.properties, DEP_KEYS)) === "LIMA")
-        : [];
-      distFeatures = (dist.status === "fulfilled")
-        ? dist.value.features.filter(f => norm(prop(f.properties, DEP_KEYS)) === "LIMA")
-        : [];
-      if (!provFeatures.length) showToast("No se cargaron las provincias de Lima; el zoom por niveles no estará disponible.");
-      buildMap();
+    /* ---------- Carga (desde el servidor, sin dependencias externas) ---------- */
+    const getJSON = r => fetch(`${API}?r=${r}`).then(res => {
+      if (!res.ok) throw new Error(`${r}: HTTP ${res.status}`);
+      return res.json();
     });
+
+    Promise.allSettled([getJSON("dep"), getJSON("prov"), getJSON("dist"), getJSON("museos")])
+      .then(([dep, prov, dist, museos]) => {
+        if (dep.status !== "fulfilled") { showToast("No se pudo cargar el mapa del Perú."); return; }
+        MUSEOS = (museos.status === "fulfilled" && Array.isArray(museos.value)) ? museos.value : [];
+        MUSEOS.forEach(m => { if (!m.provincia) m.provincia = "LIMA"; });
+
+        depFeatures = dep.value.features;
+        provFeatures = (prov.status === "fulfilled")
+          ? prov.value.features.filter(f => norm(prop(f.properties, DEP_KEYS)) === "LIMA")
+          : [];
+        distFeatures = (dist.status === "fulfilled")
+          ? dist.value.features.filter(f => norm(prop(f.properties, DEP_KEYS)) === "LIMA")
+          : [];
+        if (!provFeatures.length) showToast("No se cargaron las provincias de Lima; el zoom por niveles no estará disponible.");
+
+        buildFilters();
+        buildMap();
+      });
   </script>
 </body>
 </html>
